@@ -1,0 +1,98 @@
+spring:
+  application:
+    name: fmt-backend
+#  datasource:
+#    url: jdbc:postgresql://localhost:5432/fmt
+#    username: postgres
+#    password: passwords
+
+  # Database Configuration
+  datasource:
+    url: jdbc:postgresql://localhost:5432/fmt
+    username: postgres
+    password: passwords
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  # JPA Configuration
+  jpa:
+    hibernate:
+      ddl-auto: update  # For development
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+
+  # Email Configuration
+  # Email Configuration - Use App Password
+  spring:
+    mail:
+      host: smtp.gmail.com
+      port: 587
+      username: yaswanthbille@gmail.com  # Your Gmail address
+      password: vjavofpikftkmkcc
+      # 16-character App Password (no spaces)
+      properties:
+        mail:
+          smtp:
+            auth: true
+            starttls:
+              enable: true
+            connectiontimeout: 5000
+            timeout: 5000
+            writetimeout: 5000
+          debug: true  # Enable to see email debug logs
+
+  # Server Configuration
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+# Actuator Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics  # Expose these endpoints
+      base-path: /actuator  # Default is /actuator
+  endpoint:
+    health:
+      show-details: always  # Show details in health check
+      probes:
+        enabled: true  # Enable k8s readiness/liveness probes
+    info:
+      enabled: true
+    metrics:
+      enabled: true
+
+# Application Configuration
+app:
+  base-url: http://localhost:8080
+  frontend-url: http://localhost:3000
+  enable-email-verification: true
+
+# JWT Configuration - Generate with: openssl rand -base64 32
+jwt:
+  secret: ${JWT_SECRET:qOnGX6vR/U4XZm2c5kk4rqi2/qp4t+LK/n6JT1f1csI=}
+  expiration: 86400000  # 24 hours in milliseconds
+
+# Logging Configuration
+logging:
+  level:
+    com.tradingapp: DEBUG
+    org.springframework.security: DEBUG  # Enable security logs
+    org.springframework.web: DEBUG       # Enable web logs
+    org.hibernate.SQL: DEBUG            # See SQL queries
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %-5level [%thread] %logger{36} - %msg%n"
