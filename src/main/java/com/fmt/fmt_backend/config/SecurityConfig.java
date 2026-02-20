@@ -58,6 +58,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/verify-email").permitAll()
                         .requestMatchers("/api/test/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
+                        //.requestMatchers("/api/test/sms/**").permitAll()
+                        .requestMatchers("/api/public/**").permitAll()  // Add this
 
                         // Protected endpoints
                         .requestMatchers("/api/auth/logout").authenticated()

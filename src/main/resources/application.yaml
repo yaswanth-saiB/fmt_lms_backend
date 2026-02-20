@@ -1,98 +1,148 @@
+# ============================================
+# SPRING BOOT APPLICATION CONFIGURATION
+# ============================================
 spring:
   application:
     name: fmt-backend
-#  datasource:
-#    url: jdbc:postgresql://localhost:5432/fmt
-#    username: postgres
-#    password: passwords
 
-  # Database Configuration
+  # ==========================================
+  # DATABASE CONFIGURATION
+  # ==========================================
   datasource:
-    url: jdbc:postgresql://localhost:5432/fmt
-    username: postgres
-    password: passwords
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
       minimum-idle: 5
-      connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
 
-  # JPA Configuration
+  # ==========================================
+  # JPA CONFIGURATION
+  # ==========================================
   jpa:
     hibernate:
-      ddl-auto: update  # For development
+      ddl-auto: update
     show-sql: true
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
-        jdbc:
-          batch_size: 20
-        order_inserts: true
-        order_updates: true
 
-  # Email Configuration
-  # Email Configuration - Use App Password
-  spring:
-    mail:
-      host: smtp.gmail.com
-      port: 587
-      username: yaswanthbille@gmail.com  # Your Gmail address
-      password: vjavofpikftkmkcc
-      # 16-character App Password (no spaces)
-      properties:
-        mail:
-          smtp:
-            auth: true
-            starttls:
-              enable: true
-            connectiontimeout: 5000
-            timeout: 5000
-            writetimeout: 5000
-          debug: true  # Enable to see email debug logs
 
-  # Server Configuration
-  servlet:
-    multipart:
-      max-file-size: 10MB
-      max-request-size: 10MB
+  thymeleaf:
+    prefix: classpath:/templates/
+    suffix: .html
+    mode: HTML
+    encoding: UTF-8
+    cache: false  # true in production
 
-# Actuator Configuration
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics  # Expose these endpoints
-      base-path: /actuator  # Default is /actuator
-  endpoint:
-    health:
-      show-details: always  # Show details in health check
-      probes:
-        enabled: true  # Enable k8s readiness/liveness probes
-    info:
-      enabled: true
-    metrics:
-      enabled: true
 
-# Application Configuration
-app:
-  base-url: http://localhost:8080
-  frontend-url: http://localhost:3000
-  enable-email-verification: true
+# ============================================
+# EMAIL CONFIGURATION - 5 MAILBOXES
+# ============================================
+email:
+  otp:
+    host: ${OTP_EMAIL_HOST}
+    port: ${OTP_EMAIL_PORT}
+    username: ${OTP_EMAIL_USERNAME}
+    password: ${OTP_EMAIL_PASSWORD}
+    from: ${OTP_EMAIL_FROM}
 
-# JWT Configuration - Generate with: openssl rand -base64 32
+  info:
+    host: ${INFO_EMAIL_HOST}
+    port: ${INFO_EMAIL_PORT}
+    username: ${INFO_EMAIL_USERNAME}
+    password: ${INFO_EMAIL_PASSWORD}
+    from: ${INFO_EMAIL_FROM}
+
+  help:
+    host: ${HELP_EMAIL_HOST}
+    port: ${HELP_EMAIL_PORT}
+    username: ${HELP_EMAIL_USERNAME}
+    password: ${HELP_EMAIL_PASSWORD}
+    from: ${HELP_EMAIL_FROM}
+
+  archive:
+    host: ${ARCHIVE_EMAIL_HOST}
+    port: ${ARCHIVE_EMAIL_PORT}
+    username: ${ARCHIVE_EMAIL_USERNAME}
+    password: ${ARCHIVE_EMAIL_PASSWORD}
+    from: ${ARCHIVE_EMAIL_FROM}
+
+  admin:
+    host: ${ADMIN_EMAIL_HOST}
+    port: ${ADMIN_EMAIL_PORT}
+    username: ${ADMIN_EMAIL_USERNAME}
+    password: ${ADMIN_EMAIL_PASSWORD}
+    from: ${ADMIN_EMAIL_FROM}
+
+# ============================================
+# TWILIO SMS CONFIGURATION
+# ============================================
+twilio:
+  account-sid: ${TWILIO_ACCOUNT_SID}
+  auth-token: ${TWILIO_AUTH_TOKEN}
+  phone-number: ${TWILIO_PHONE_NUMBER}
+
+
+# ============================================
+# SMS CONFIGURATION
+# ============================================
+sms:
+  max-length: 160
+  enable-unicode: false
+  country-code: IN
+
+# ============================================
+# JWT CONFIGURATION
+# ============================================
 jwt:
-  secret: ${JWT_SECRET:qOnGX6vR/U4XZm2c5kk4rqi2/qp4t+LK/n6JT1f1csI=}
-  expiration: 86400000  # 24 hours in milliseconds
+  secret: ${JWT_SECRET}
+  access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:21600000}
+  refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:1209600000}
 
-# Logging Configuration
+# ============================================
+# TOKEN CLEANUP SCHEDULER
+# ============================================
+scheduling:
+  enabled: true
+
+# ============================================
+# OTP CONFIGURATION
+# ============================================
+otp:
+  expiry-minutes: 5
+  max-attempts: 3
+  lockout-minutes: 10
+  resend-cooldown-seconds: 60
+  length: 6
+
+# ============================================
+# DEVICE MANAGEMENT
+# ============================================
+device:
+  max-sessions-per-user: 2
+  max-streaming-sessions: 1
+  inactive-days: 30
+
+# ============================================
+# APPLICATION CONFIGURATION
+# ============================================
+app:
+  base-url: ${APP_BASE_URL:http://localhost:8080}
+  frontend-url: ${APP_FRONTEND_URL:http://localhost:3000}
+  environment: ${APP_ENVIRONMENT:development}
+  enable-bcc: true
+  bcc-address: archive@xyzt.com
+
+# ============================================
+# LOGGING
+# ============================================
 logging:
   level:
     com.tradingapp: DEBUG
-    org.springframework.security: DEBUG  # Enable security logs
-    org.springframework.web: DEBUG       # Enable web logs
-    org.hibernate.SQL: DEBUG            # See SQL queries
+    org.springframework.security: INFO
+    org.springframework.mail: DEBUG
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} - %-5level [%thread] %logger{36} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"

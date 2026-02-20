@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0;">
+<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="background-color: #f8f9fa; border-radius: 8px; padding: 30px; border: 1px solid #e9ecef;">
+        <h2 style="color: #2c3e50; margin-top: 0;">Verification Code</h2>
+        <p>Hello,</p>
+        <p>Your verification code is:</p>
+        <div style="background-color: #fff; border-radius: 6px; padding: 20px; margin: 20px 0; text-align: center; border: 1px solid #dee2e6;">
+            <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #0066cc;" th:text="${otp}">123456</span>
+        </div>
+        <p style="font-size: 14px; color: #666;">This code will expire in <span th:text="${expiryMinutes}">5</span> minutes.</p>
+        <p style="font-size: 14px; color: #666;">If you didn't request this code, please ignore this email.</p>
+        <hr style="border: none; border-top: 1px solid #e9ecef; margin: 20px 0;">
+        <p style="font-size: 12px; color: #999; text-align: center;">
+            Trading App · <span th:text="${year}">2026</span>
+        </p>
+    </div>
+</div>
+</body>
+</html>
