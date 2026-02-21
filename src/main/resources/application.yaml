@@ -9,13 +9,20 @@ spring:
   # DATABASE CONFIGURATION
   # ==========================================
   datasource:
-    url: ${DATABASE_URL}
-    username: ${DATABASE_USERNAME}
-    password: ${DATABASE_PASSWORD}
-    driver-class-name: org.postgresql.Driver
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 5
+#    url: ${DATABASE_URL}
+#    username: ${DATABASE_USERNAME}
+#    password: ${DATABASE_PASSWORD}
+#    driver-class-name: org.postgresql.Driver
+#    hikari:
+#      maximum-pool-size: 10
+#      minimum-idle: 5
+    # Railway will inject these environment variables automaticallyF
+    url: ${DATABASE_URL}  # Railway injects this automatically
+    username: ${PGUSER:postgres}
+    password: ${PGPASSWORD:}
+
+  server:
+    port: ${PORT:8080}  # Railway injects PORT
 
   # ==========================================
   # JPA CONFIGURATION
@@ -134,7 +141,7 @@ app:
   frontend-url: ${APP_FRONTEND_URL:http://localhost:3000}
   environment: ${APP_ENVIRONMENT:development}
   enable-bcc: true
-  bcc-address: archive@xyzt.com
+  bcc-address: archive@firstmilliontrade.com
 
 # ============================================
 # LOGGING

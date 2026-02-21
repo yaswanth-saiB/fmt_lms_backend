@@ -92,7 +92,7 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(Arrays.asList(
                 "http://localhost:3000",      // React development
                 "http://localhost:5173",      // Vite development
-                "https://yourfrontend.com"    // Production frontend
+                "https://fmt-backend.up.railway.app"    // Production frontend
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList(
