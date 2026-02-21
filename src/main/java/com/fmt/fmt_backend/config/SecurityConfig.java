@@ -62,6 +62,15 @@ public class SecurityConfig {
                         //.requestMatchers("/api/test/sms/**").permitAll()
                         .requestMatchers("/api/public/**").permitAll()  // Add this
 
+                        // SWAGGER - ALL NEED TO BE PUBLIC
+                        .requestMatchers("/swagger-ui.html").permitAll()
+                        .requestMatchers("/swagger-ui/**").permitAll()
+                        .requestMatchers("/v3/api-docs/**").permitAll()
+                        .requestMatchers("/v3/api-docs.yaml").permitAll()
+                        .requestMatchers("/swagger-resources/**").permitAll()
+                        .requestMatchers("/webjars/**").permitAll()
+                        .requestMatchers("/api-docs/**").permitAll()
+
                         // Protected endpoints
                         .requestMatchers("/api/auth/logout").authenticated()
                         .requestMatchers("/api/auth/me").authenticated()
