@@ -34,20 +34,16 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private String password;
 
-    // PostgreSQL ENUM mapping
-    @Enumerated(EnumType.STRING)
-    @Column(columnDefinition = "user_role_enum")
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Enumerated(EnumType.STRING)  // ✅ Simple mapping
+    @Column(name = "user_role")
     private UserRole userRole;
 
     @Column(name = "phone_number")
     private String phoneNumber;
 
-    // PostgreSQL ENUM mapping
-    @Enumerated(EnumType.STRING)
-    @Column(columnDefinition = "gender_enum")
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Enumerated(EnumType.STRING)  // ✅ Simple mapping
     private Gender gender;
+
 
     private String city;
     private String state;
