@@ -54,6 +54,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // Public endpoints
                         .requestMatchers("/api/auth/signup").permitAll()
+                        .requestMatchers("/api/auth/signup/simple").permitAll()
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/verify-email").permitAll()
                         .requestMatchers("/api/test/**").permitAll()
@@ -92,7 +93,7 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(Arrays.asList(
                 "http://localhost:3000",      // React development
                 "http://localhost:5173",      // Vite development
-                "https://fmtlmsbackend-production.up.railway.app/"    // Production frontend
+                "https://fmtlmsbackend-production.up.railway.app"    // Production frontend
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList(
