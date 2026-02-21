@@ -17,9 +17,10 @@ spring:
 #      maximum-pool-size: 10
 #      minimum-idle: 5
     # Railway will inject these environment variables automaticallyF
-    url: jdbc:${DATABASE_URL}  # Railway injects this automatically
-    #username: ${PGUSER:postgres}
-    #password: ${PGPASSWORD:}
+    url: jdbc:postgresql://${PGHOST}:${PGPORT}/${PGDATABASE}?sslmode=require
+    username: ${PGUSER}
+    password: ${PGPASSWORD}
+    driver-class-name: org.postgresql.Driver
 
   server:
     port: ${PORT:8080}  # Railway injects PORT
