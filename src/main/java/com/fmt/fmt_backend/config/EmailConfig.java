@@ -24,10 +24,12 @@ public class EmailConfig {
 
     // ✅ Base properties (your working config, centralized!)
     private Map<String, String> baseProperties = new HashMap<>() {{
-        put("mail.transport.protocol", "smtps");
+        put("mail.transport.protocol", "smtp");
         put("mail.smtps.auth", "true");
         put("mail.smtps.ssl.enable", "false");
         put("mail.smtps.starttls.enable", "true");
+        put("mail.smtp.starttls.required", "true"); // added for railway deployment
+
         put("mail.smtps.connectiontimeout", "30000");
         put("mail.smtps.timeout", "10000");
         put("mail.smtps.writetimeout", "10000");
@@ -86,7 +88,8 @@ public class EmailConfig {
         props.putAll(baseProperties);
 
         // 2. Add mailbox-specific trust setting
-        props.put("mail.smtps.ssl.trust", mailbox.getHost());
+        //props.put("mail.smtps.ssl.trust", mailbox.getHost());
+        props.put("mail.smtp.ssl.trust", mailbox.getHost());
 
         // 3. Apply any mailbox-specific overrides
         if (mailbox.getProperties() != null && !mailbox.getProperties().isEmpty()) {
