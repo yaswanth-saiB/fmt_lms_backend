@@ -26,12 +26,12 @@ public class EmailConfig {
     private Map<String, String> baseProperties = new HashMap<>() {{
         put("mail.transport.protocol", "smtps");
         put("mail.smtps.auth", "true");
-        put("mail.smtps.ssl.enable", "true");
-        put("mail.smtps.starttls.enable", "false");
+        put("mail.smtps.ssl.enable", "false");
+        put("mail.smtps.starttls.enable", "true");
         put("mail.smtps.connectiontimeout", "30000");
         put("mail.smtps.timeout", "10000");
         put("mail.smtps.writetimeout", "10000");
-        put("mail.debug", "false");
+        put("mail.debug", "true");
     }};
 
     @Data
