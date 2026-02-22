@@ -4,6 +4,10 @@ import com.fmt.fmt_backend.dto.ApiResponse;
 import com.fmt.fmt_backend.service.DeviceService;
 import com.fmt.fmt_backend.service.JwtService;
 import com.fmt.fmt_backend.service.TokenService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +22,7 @@ import java.util.UUID;
 @RequestMapping("/api/auth/token")
 @RequiredArgsConstructor
 @Slf4j
+@Tag(name = "Token Management", description = "APIs for token refresh and validation")
 public class TokenController {
 
     private final TokenService tokenService;
@@ -26,8 +31,13 @@ public class TokenController {
     private final HttpServletRequest request;
 
     @PostMapping("/refresh")
+    @Operation(
+            summary = "Refresh Access Token",
+            description = "Get a new access token using a valid refresh token"
+    )
+    @SecurityRequirements({})  // Public - uses refresh token, not access token
     public ResponseEntity<ApiResponse<Map<String, Object>>> refreshToken(
-            @RequestHeader("Authorization") String authHeader,
+            @Parameter(description = "Refresh token", required = true)
             @RequestParam String refreshToken) {
 
         log.info("🔄 Token refresh request received");
@@ -49,7 +59,13 @@ public class TokenController {
     }
 
     @PostMapping("/rotate")
+    @Operation(
+            summary = "Rotate Refresh Token",
+            description = "Get a new refresh token (security best practice)"
+    )
+    @SecurityRequirements({})  // Public - uses old refresh token
     public ResponseEntity<ApiResponse<Map<String, Object>>> rotateToken(
+            @Parameter(description = "Current refresh token", required = true)
             @RequestParam String refreshToken) {
 
         log.info("🔄 Token rotation request received");
@@ -68,6 +84,10 @@ public class TokenController {
     }
 
     @PostMapping("/revoke-all")
+    @Operation(
+            summary = "Revoke All Tokens",
+            description = "Revoke all refresh tokens for current user"
+    )
     public ResponseEntity<ApiResponse<String>> revokeAllTokens(
             @RequestHeader("Authorization") String authHeader) {
 
@@ -91,10 +111,20 @@ public class TokenController {
     }
 
     @GetMapping("/validate")
+    @Operation(
+            summary = "Validate Token",
+            description = "Check if current access token is valid"
+    )
     public ResponseEntity<ApiResponse<Map<String, Object>>> validateToken(
             @RequestHeader("Authorization") String authHeader) {
 
         try {
+
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return ResponseEntity.status(401)
+                        .body(ApiResponse.error("Invalid authorization header"));
+            }
+
             String token = authHeader.substring(7);
 
             boolean isValid = !tokenService.isTokenExpired(token);

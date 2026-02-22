@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -55,6 +56,7 @@ public class AuthService {
             log.warn("❌ Email already exists: {}", signUpRequest.getEmail());
             return ApiResponse.error("Email is already registered");
         }
+
 
         try {
             // Generate and send OTP via email
@@ -92,9 +94,6 @@ public class AuthService {
         if (!isValid) {
             return ApiResponse.error("Invalid or expired OTP");
         }
-
-        // Store that email is verified (you might want to use a cache)
-        // We'll mark this in the final signup step
 
         return ApiResponse.success(
                 "Email verified successfully. Please provide mobile number for verification.",
@@ -145,6 +144,7 @@ public class AuthService {
             HttpServletRequest request) {
 
         log.info("📱 Step 4 - Verifying mobile OTP and registering user: {}", signUpRequest.getEmail());
+
 
         // Verify mobile OTP
         boolean isMobileValid = otpService.verifyOtp(
@@ -382,5 +382,65 @@ public class AuthService {
         if (phone == null) return "null";
         if (phone.length() <= 6) return "******";
         return phone.substring(0, 3) + "****" + phone.substring(phone.length() - 3);
+    }
+
+    /**
+     * SIMPLE signup - NO OTP verification (FOR TESTING ONLY)
+     */
+    @Transactional
+    public ApiResponse<Map<String, Object>> simpleRegister(SignUpRequest signUpRequest, HttpServletRequest request) {
+        log.info("📝 SIMPLE signup for: {}", signUpRequest.getEmail());
+
+        // Check if email already exists
+        if (userRepository.existsByEmail(signUpRequest.getEmail())) {
+            return ApiResponse.error("Email is already registered");
+        }
+
+        // Create user directly - NO OTP verification
+        User user = User.builder()
+                .firstName(signUpRequest.getFirstName())
+                .lastName(signUpRequest.getLastName())
+                .email(signUpRequest.getEmail().toLowerCase().trim())
+                .password(passwordEncoder.encode(signUpRequest.getPassword()))
+                .phoneNumber(signUpRequest.getPhoneNumber())
+                .gender(signUpRequest.getGender())
+                .city(signUpRequest.getCity())
+                .state(signUpRequest.getState())
+                .country(signUpRequest.getCountry())
+                .postalCode(signUpRequest.getPostalCode())
+                .userRole(UserRole.STUDENT)
+                .isActive(true)
+                .isEmailVerified(true)  // Auto-verified for simple signup
+                .emailVerifiedAt(LocalDateTime.now())
+                .isMobileVerified(true)  // Auto-verified for simple signup
+                .mobileVerifiedAt(LocalDateTime.now())
+                .failedLoginAttempts(0)
+                .lastPasswordChangeAt(LocalDateTime.now())
+                .build();
+
+        User savedUser = userRepository.save(user);
+        log.info("✅ SIMPLE signup successful: {}", savedUser.getEmail());
+
+        // Send welcome email (optional)
+        emailService.sendWelcomeEmail(
+                savedUser.getEmail(),
+                savedUser.getFirstName(),
+                savedUser.getUserRole().name()
+        );
+
+        // Generate tokens
+        Map<String, Object> tokens = tokenService.generateTokenPair(savedUser, request);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("user", Map.of(
+                "id", savedUser.getId(),
+                "email", savedUser.getEmail(),
+                "firstName", savedUser.getFirstName(),
+                "lastName", savedUser.getLastName(),
+                "role", savedUser.getUserRole()
+        ));
+        response.putAll(tokens);
+
+        return ApiResponse.success("Simple signup successful", response);
     }
 }

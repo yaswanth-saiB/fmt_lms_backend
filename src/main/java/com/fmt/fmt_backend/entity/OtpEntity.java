@@ -14,6 +14,12 @@ public class OtpEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "user_id")  // ✅ NEW: Optional - for logged in users
+    private UUID userId;
+
+    @Column(name = "session_id")  // ✅ NEW: For anonymous signup
+    private String sessionId;
+
     @Column(nullable = false)
     private String identifier; // email or phone number
 
@@ -34,6 +40,9 @@ public class OtpEntity {
     private LocalDateTime verifiedAt;
 
     private LocalDateTime lockedUntil;
+
+    @Column(name = "ip_address")  // ✅ ADD THIS FIELD
+    private String ipAddress;
 
     @Column(nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();

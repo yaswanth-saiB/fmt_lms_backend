@@ -58,6 +58,13 @@ public class DeviceService {
 
         if (existingDeviceOpt.isPresent()) {
             DeviceEntity existingDevice = existingDeviceOpt.get();
+
+            // ✅ FIX BUG 8: Reactivate if inactive
+            if (!existingDevice.isActive()) {
+                log.info("🔄 Reactivating inactive device: {}", existingDevice.getId());
+                existingDevice.setActive(true);
+            }
+
             // Update last active time
             existingDevice.setLastActiveAt(LocalDateTime.now());
             existingDevice.setIpAddress(getClientIp(request));
@@ -342,25 +349,37 @@ public class DeviceService {
 
         if (userAgent == null) return "Unknown Device";
 
-        if (userAgent.contains("Windows")) {
-            return "Windows PC";
-        } else if (userAgent.contains("Mac")) {
-            return "Mac";
-        } else if (userAgent.contains("Linux")) {
-            return "Linux";
-        } else if (userAgent.contains("iPhone")) {
-            return "iPhone";
-        } else if (userAgent.contains("iPad")) {
-            return "iPad";
-        } else if (userAgent.contains("Android") && userAgent.contains("Mobile")) {
-            return "Android Phone";
-        } else if (userAgent.contains("Android")) {
-            return "Android Tablet";
-        } else if (userAgent.contains("Mobile")) {
-            return "Mobile Device";
+        // Detect browser first
+        String browser = "Unknown Browser";
+        if (userAgent.contains("Chrome") && !userAgent.contains("Edg")) {
+            browser = "Chrome";
+        } else if (userAgent.contains("Edg")) {
+            browser = "Edge";
+        } else if (userAgent.contains("Firefox")) {
+            browser = "Firefox";
+        } else if (userAgent.contains("Safari") && !userAgent.contains("Chrome")) {
+            browser = "Safari";
+        } else if (userAgent.contains("Opera") || userAgent.contains("OPR")) {
+            browser = "Opera";
         }
 
-        return "Unknown Device";
+        // Detect OS
+        String os = "Unknown OS";
+        if (userAgent.contains("Windows NT 10.0")) {
+            os = "Windows 10";
+        } else if (userAgent.contains("Windows NT 11.0")) {
+            os = "Windows 11";
+        } else if (userAgent.contains("Mac OS X")) {
+            os = "macOS";
+        } else if (userAgent.contains("Linux")) {
+            os = "Linux";
+        } else if (userAgent.contains("Android")) {
+            os = "Android";
+        } else if (userAgent.contains("iPhone") || userAgent.contains("iPad")) {
+            os = "iOS";
+        }
+
+        return browser + " on " + os;
     }
 
     /**

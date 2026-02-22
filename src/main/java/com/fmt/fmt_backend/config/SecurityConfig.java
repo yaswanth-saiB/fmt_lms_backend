@@ -52,32 +52,35 @@ public class SecurityConfig {
 
                 // Authorize requests
                 .authorizeHttpRequests(auth -> auth
-                        // Public endpoints
-                        .requestMatchers("/api/auth/signup").permitAll()
-                        .requestMatchers("/api/auth/signup/simple").permitAll()
+                        // ✅ First, specify the PUBLIC ones that should NOT need auth
                         .requestMatchers("/api/auth/login").permitAll()
-                        .requestMatchers("/api/auth/verify-email").permitAll()
-                        .requestMatchers("/api/test/**").permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
-                        //.requestMatchers("/api/test/sms/**").permitAll()
-                        .requestMatchers("/api/public/**").permitAll()  // Add this
+                        .requestMatchers("/api/auth/login/verify-otp").permitAll()
+                        .requestMatchers("/api/auth/signup/**").permitAll()
+                        .requestMatchers("/api/auth/refresh-token").permitAll()
+                        .requestMatchers("/api/auth/forgot-password").permitAll()
+                        .requestMatchers("/api/auth/reset-password").permitAll()
 
-                        // SWAGGER - ALL NEED TO BE PUBLIC
-                        .requestMatchers("/swagger-ui.html").permitAll()
-                        .requestMatchers("/swagger-ui/**").permitAll()
-                        .requestMatchers("/v3/api-docs/**").permitAll()
-                        .requestMatchers("/v3/api-docs.yaml").permitAll()
-                        .requestMatchers("/swagger-resources/**").permitAll()
-                        .requestMatchers("/webjars/**").permitAll()
-                        .requestMatchers("/api-docs/**").permitAll()
+                        //testing purpose public endpoints
+                        .requestMatchers("/api/test/**").permitAll()
+                        .requestMatchers("/api/public/**").permitAll()  // Add this
 
                         // Protected endpoints
                         .requestMatchers("/api/auth/logout").authenticated()
                         .requestMatchers("/api/auth/me").authenticated()
-                        .requestMatchers("/api/user/**").authenticated()  // ADD THIS LINE
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/mentor/**").hasRole("MENTOR")
                         .requestMatchers("/api/student/**").hasRole("STUDENT")
+                        .requestMatchers("/api/auth/change-password").authenticated()
+
+                        // Other public endpoints
+                        .requestMatchers("/api/test/**").permitAll()
+                        .requestMatchers("/actuator/**").permitAll()
+                        .requestMatchers("/swagger-ui/**").permitAll()
+                        .requestMatchers("/v3/api-docs/**").permitAll()
+
+                        // Protected endpoints
+                        .requestMatchers("/api/user/**").authenticated()
+                        .requestMatchers("/api/devices/**").authenticated()
 
                         .anyRequest().authenticated()
                 )

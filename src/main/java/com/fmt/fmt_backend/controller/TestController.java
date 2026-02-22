@@ -5,7 +5,9 @@ import com.fmt.fmt_backend.enums.UserRole;
 import com.fmt.fmt_backend.repository.UserRepository;
 import com.fmt.fmt_backend.service.CustomUserDetailsService;
 import com.fmt.fmt_backend.service.JwtService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -26,6 +28,8 @@ import jakarta.servlet.http.HttpServletRequest;
 @RestController
 @RequestMapping("/api/test")
 @RequiredArgsConstructor
+@Slf4j
+@Tag(name = "Test", description = "Test endpoints for debugging and health checks")
 public class TestController {
 
     private final UserRepository userRepository;

@@ -4,6 +4,9 @@ import com.fmt.fmt_backend.dto.ApiResponse;
 import com.fmt.fmt_backend.entity.User;
 import com.fmt.fmt_backend.service.AuthService;
 import com.fmt.fmt_backend.service.DeviceService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +21,7 @@ import java.util.UUID;
 @RequestMapping("/api/devices")
 @RequiredArgsConstructor
 @Slf4j
+@Tag(name = "Device Management", description = "APIs for managing user devices and streaming")
 public class DeviceController {
 
     private final DeviceService deviceService;
@@ -25,7 +29,12 @@ public class DeviceController {
     private final HttpServletRequest request;
 
     @GetMapping
+    @Operation(
+            summary = "Get All Devices",
+            description = "Returns list of all devices associated with current user"
+    )
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getMyDevices() {
+        log.info("📱 Fetching devices for current user");
         User currentUser = authService.getCurrentUser()
                 .orElseThrow(() -> new RuntimeException("Not authenticated"));
 
@@ -35,7 +44,16 @@ public class DeviceController {
     }
 
     @DeleteMapping("/{deviceId}")
-    public ResponseEntity<ApiResponse<String>> revokeDevice(@PathVariable UUID deviceId) {
+    @Operation(
+            summary = "Revoke Device",
+            description = "Revoke a specific device (force logout)"
+    )
+    public ResponseEntity<ApiResponse<String>> revokeDevice(
+            @Parameter(description = "Device ID to revoke", required = true)
+            @PathVariable UUID deviceId) {
+
+        log.info("🔒 Revoking device: {}", deviceId);
+
         User currentUser = authService.getCurrentUser()
                 .orElseThrow(() -> new RuntimeException("Not authenticated"));
 
@@ -45,7 +63,12 @@ public class DeviceController {
     }
 
     @PostMapping("/check-limit")
+    @Operation(
+            summary = "Check Device Limit",
+            description = "Check if user has exceeded device limit (max 2 devices)"
+    )
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> checkDeviceLimit() {
+        log.info("🔍 Checking device limit for current user");
         User currentUser = authService.getCurrentUser()
                 .orElseThrow(() -> new RuntimeException("Not authenticated"));
 
@@ -55,7 +78,15 @@ public class DeviceController {
     }
 
     @PostMapping("/disconnect")
-    public ResponseEntity<ApiResponse<String>> disconnectDevice(@RequestParam UUID deviceId) {
+    @Operation(
+            summary = "Disconnect Device",
+            description = "Disconnect a specific device (user choice)"
+    )
+    public ResponseEntity<ApiResponse<String>> disconnectDevice(
+            @Parameter(description = "Device ID to disconnect", required = true)
+            @RequestParam UUID deviceId) {
+        log.info("🔌 Disconnecting device: {}", deviceId);
+
         User currentUser = authService.getCurrentUser()
                 .orElseThrow(() -> new RuntimeException("Not authenticated"));
 
@@ -65,7 +96,15 @@ public class DeviceController {
     }
 
     @PostMapping("/streaming/start")
-    public ResponseEntity<ApiResponse<String>> startStreaming(@RequestParam UUID deviceId) {
+    @Operation(
+            summary = "Start Streaming",
+            description = "Start streaming on specified device (only 1 device can stream at a time)"
+    )
+    public ResponseEntity<ApiResponse<String>> startStreaming(
+            @Parameter(description = "Device ID to start streaming", required = true)
+            @RequestParam UUID deviceId) {
+        log.info("🎥 Starting streaming on device: {}", deviceId);
+
         User currentUser = authService.getCurrentUser()
                 .orElseThrow(() -> new RuntimeException("Not authenticated"));
 
@@ -75,12 +114,27 @@ public class DeviceController {
     }
 
     @PostMapping("/streaming/stop")
-    public ResponseEntity<ApiResponse<String>> stopStreaming(@RequestParam UUID deviceId) {
+    @Operation(
+            summary = "Stop Streaming",
+            description = "Stop streaming on specified device"
+    )
+    public ResponseEntity<ApiResponse<String>> stopStreaming(
+            @Parameter(description = "Device ID to stop streaming", required = true)
+            @RequestParam UUID deviceId) {
+        log.info("⏹️ Stopping streaming on device: {}", deviceId);
+
         User currentUser = authService.getCurrentUser()
                 .orElseThrow(() -> new RuntimeException("Not authenticated"));
 
         ApiResponse<String> response = deviceService.stopStreaming(currentUser, deviceId);
 
         return ResponseEntity.ok(response);
+    }
+
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<ApiResponse<String>> handleRuntimeException(RuntimeException e) {
+        log.error("❌ Device controller error: {}", e.getMessage());
+        return ResponseEntity.status(401)
+                .body(ApiResponse.error(e.getMessage()));
     }
 }

@@ -13,7 +13,20 @@ import java.util.UUID;
 @Repository
 public interface OtpRepository extends JpaRepository<OtpEntity, UUID> {
 
+//    // for signup flow with session ID
+//    Optional<OtpEntity> findTopByIdentifierAndTypeAndVerifiedFalseOrderByCreatedAtDesc(
+//            String identifier, OtpEntity.OtpType type, String sessionID);
+//
+//    //for login flow with userID
+//    Optional<OtpEntity> findTopByIdentifierAndTypeAndVerifiedTrueOrderByCreatedAtDesc(
+//            String identifier, OtpEntity.OtpType type, UUID userId);
+
+    // For backward compatibility (during transition)
     Optional<OtpEntity> findTopByIdentifierAndTypeAndVerifiedFalseOrderByCreatedAtDesc(
+            String identifier, OtpEntity.OtpType type);
+
+    // For checking recent verified OTPs (used in Bug 2)
+    Optional<OtpEntity> findTopByIdentifierAndTypeAndVerifiedTrueOrderByCreatedAtDesc(
             String identifier, OtpEntity.OtpType type);
 
     @Modifying
@@ -21,4 +34,7 @@ public interface OtpRepository extends JpaRepository<OtpEntity, UUID> {
     void deleteExpiredOtps(@Param("now") LocalDateTime now);
 
     long countByIdentifierAndCreatedAtAfter(String identifier, LocalDateTime after);
+
+    @Query("SELECT COUNT(o) FROM OtpEntity o WHERE o.ipAddress = :ip AND o.createdAt > :since")
+    long countByIpAddressAndCreatedAtAfter(@Param("ip") String ip, @Param("since") LocalDateTime since);
 }

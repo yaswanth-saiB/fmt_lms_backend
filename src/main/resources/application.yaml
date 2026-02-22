@@ -9,18 +9,18 @@ spring:
   # DATABASE CONFIGURATION
   # ==========================================
   datasource:
-#    url: ${DATABASE_URL}
-#    username: ${DATABASE_USERNAME}
-#    password: ${DATABASE_PASSWORD}
-#    driver-class-name: org.postgresql.Driver
-#    hikari:
-#      maximum-pool-size: 10
-#      minimum-idle: 5
-    # Railway will inject these environment variables automaticallyF
-    url: jdbc:postgresql://${PGHOST}:${PGPORT}/${PGDATABASE}?sslmode=require
-    username: ${PGUSER}
-    password: ${PGPASSWORD}
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+    # Railway will inject these environment variables automaticallyF
+#    url: jdbc:postgresql://${PGHOST}:${PGPORT}/${PGDATABASE}?sslmode=require
+#    username: ${PGUSER}
+#    password: ${PGPASSWORD}
+#    driver-class-name: org.postgresql.Driver
 
   server:
     port: ${PORT:8080}  # Railway injects PORT
@@ -143,6 +143,27 @@ app:
   environment: ${APP_ENVIRONMENT:development}
   enable-bcc: true
   bcc-address: archive@firstmilliontrade.com
+
+
+# Swagger/OpenAPI Configuration
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    try-it-out-enabled: true
+    operations-sorter: method
+    tags-sorter: alpha
+    disable-swagger-default-url: true
+    display-request-duration: true
+    # Add this to show authorize button
+    persist-authorization: true
+  packages-to-scan:
+    - com.fmt.fmt_backend.controller  # ✅ CRITICAL - tell Swagger where to scan
+  paths-to-match:
+    - /api/**  # ✅ Only include API paths
 
 # ============================================
 # LOGGING

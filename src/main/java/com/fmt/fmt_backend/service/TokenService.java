@@ -125,6 +125,7 @@ public class TokenService {
     public Map<String, Object> refreshAccessToken(String refreshTokenValue, String currentDeviceFingerprint) {
         log.info("🔄 Refreshing access token");
 
+
         // Find refresh token
         RefreshTokenEntity refreshToken = refreshTokenRepository.findByToken(refreshTokenValue)
                 .orElseThrow(() -> new RuntimeException("Invalid refresh token"));

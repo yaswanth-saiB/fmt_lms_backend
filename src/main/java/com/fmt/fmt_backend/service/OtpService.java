@@ -2,6 +2,7 @@ package com.fmt.fmt_backend.service;
 
 import com.fmt.fmt_backend.entity.OtpEntity;
 import com.fmt.fmt_backend.repository.OtpRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -18,20 +20,21 @@ public class OtpService {
 
     private final OtpRepository otpRepository;
     private final SecureRandom secureRandom = new SecureRandom();
+    private HttpServletRequest request;
 
-    @Value("${otp.expiry-minutes}")
+    @Value("${otp.expiry-minutes:5}")
     private int expiryMinutes;
 
-    @Value("${otp.max-attempts}")
+    @Value("${otp.max-attempts:3}")
     private int maxAttempts;
 
-    @Value("${otp.lockout-minutes}")
+    @Value("${otp.lockout-minutes:10}")
     private int lockoutMinutes;
 
-    @Value("${otp.resend-cooldown-seconds}")
+    @Value("${otp.resend-cooldown-seconds:60}")
     private int resendCooldownSeconds;
 
-    @Value("${otp.length}")
+    @Value("${otp.length:6}")
     private int otpLength;
 
     @Value("${app.environment:development}")
@@ -39,6 +42,19 @@ public class OtpService {
 
     @Transactional
     public String generateOtp(String identifier, OtpEntity.OtpType type) {
+        log.info("Generating OTP for: {} ({})", identifier, type);
+
+        //String clientIp = getClientIp();
+
+        // ✅ BUG 4 FIX: Check IP rate limit
+//        LocalDateTime ipWindow = LocalDateTime.now().minusHours(1);
+//        long ipAttempts = otpRepository.countByIpAddressAndCreatedAtAfter(clientIp, ipWindow);
+
+//        if (ipAttempts >= 10) {  // Max 10 OTPs per hour per IP
+//            log.warn("⚠️ IP rate limit exceeded for IP: {}", clientIp);
+//            throw new RuntimeException("Too many OTP requests from this IP. Please try again later.");
+//        }
+
         // Check cooldown
         LocalDateTime cooldownTime = LocalDateTime.now().minusSeconds(resendCooldownSeconds);
         long recentCount = otpRepository.countByIdentifierAndCreatedAtAfter(identifier, cooldownTime);
@@ -51,11 +67,6 @@ public class OtpService {
         // Generate OTP
         String otp = generateRandomOtp();
 
-        // Mask for logs in production
-        String logOtp = "production".equals(environment) ?
-                otp.substring(0, 2) + "***" + otp.substring(otp.length() - 1) : otp;
-
-        log.info("Generated OTP for {} ({}): {}", identifier, type, logOtp);
 
         // Save to database
         OtpEntity otpEntity = new OtpEntity();
@@ -63,8 +74,13 @@ public class OtpService {
         otpEntity.setOtpCode(otp);
         otpEntity.setType(type);
         otpEntity.setExpiresAt(LocalDateTime.now().plusMinutes(expiryMinutes));
+        //otpEntity.setIpAddress(clientIp);
 
         otpRepository.save(otpEntity);
+
+        // Mask for logs in production
+        String logOtp = "production".equals(environment) ? "***" : otp;
+        log.info("Generated OTP for {}: {}", identifier, logOtp);
 
         return otp;
     }
@@ -122,5 +138,13 @@ public class OtpService {
     private String generateRandomOtp() {
         int otp = 100000 + secureRandom.nextInt(900000);
         return String.valueOf(otp);
+    }
+
+    private String getClientIp() {
+        String xfHeader = request.getHeader("X-Forwarded-For");
+        if (xfHeader != null && !xfHeader.isEmpty()) {
+            return xfHeader.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 }
