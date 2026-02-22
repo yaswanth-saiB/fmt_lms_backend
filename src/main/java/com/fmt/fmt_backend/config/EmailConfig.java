@@ -25,14 +25,14 @@ public class EmailConfig {
     // ✅ Base properties (your working config, centralized!)
     private Map<String, String> baseProperties = new HashMap<>() {{
         put("mail.transport.protocol", "smtp");
-        put("mail.smtps.auth", "true");
+        put("mail.smtp.auth", "true");
         //put("mail.smtps.ssl.enable", "false");
-        put("mail.smtps.starttls.enable", "true");
+        put("mail.smtp.starttls.enable", "true");
         put("mail.smtp.starttls.required", "true"); // added for railway deployment
 
-        put("mail.smtps.connectiontimeout", "30000");
-        put("mail.smtps.timeout", "10000");
-        put("mail.smtps.writetimeout", "10000");
+        put("mail.smtp.connectiontimeout", "30000");
+        put("mail.smtp.timeout", "10000");
+        put("mail.smtp.writetimeout", "10000");
         put("mail.debug", "true");
     }};
 
@@ -80,7 +80,8 @@ public class EmailConfig {
         sender.setPort(mailbox.getPort());
         sender.setUsername(mailbox.getUsername());
         sender.setPassword(mailbox.getPassword());
-        sender.setProtocol("smtps");
+        //sender.setProtocol("smtps");
+        sender.setProtocol("smtp");
 
         Properties props = new Properties();
 
