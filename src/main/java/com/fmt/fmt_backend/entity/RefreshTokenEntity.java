@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.CreationTimestamp;
+
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -40,8 +42,9 @@ public class RefreshTokenEntity {
 
     private String revokedReason;     // NEW: Why it was revoked (logout, security, etc.)
 
-    @Column(nullable = false)
-    private LocalDateTime createdAt = LocalDateTime.now();
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 
     public boolean isValid() {
         return !revoked && LocalDateTime.now().isBefore(expiresAt);

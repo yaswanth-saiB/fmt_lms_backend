@@ -6,6 +6,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
+
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 
 @Configuration
@@ -19,6 +22,18 @@ public class EmailConfig {
     private Mailbox archive;
     private Mailbox admin;
 
+    // ✅ Base properties (your working config, centralized!)
+    private Map<String, String> baseProperties = new HashMap<>() {{
+        put("mail.transport.protocol", "smtps");
+        put("mail.smtps.auth", "true");
+        put("mail.smtps.ssl.enable", "true");
+        put("mail.smtps.starttls.enable", "false");
+        put("mail.smtps.connectiontimeout", "30000");
+        put("mail.smtps.timeout", "10000");
+        put("mail.smtps.writetimeout", "10000");
+        put("mail.debug", "false");
+    }};
+
     @Data
     public static class Mailbox {
         private String host;
@@ -26,6 +41,7 @@ public class EmailConfig {
         private String username;
         private String password;
         private String from;
+        private Map<String, String> properties = new HashMap<>();
     }
 
     @Bean
@@ -53,29 +69,31 @@ public class EmailConfig {
         return createMailSender(admin);
     }
 
+    /**
+     * ✅ REUSABLE method - replaces your hardcoded version
+     */
     private JavaMailSender createMailSender(Mailbox mailbox) {
         JavaMailSenderImpl sender = new JavaMailSenderImpl();
         sender.setHost(mailbox.getHost());
         sender.setPort(mailbox.getPort());
         sender.setUsername(mailbox.getUsername());
         sender.setPassword(mailbox.getPassword());
+        sender.setProtocol("smtps");
 
-        // CRITICAL FIX: Enable SSL
-        sender.setProtocol("smtps");  // Use smtps for SSL
+        Properties props = new Properties();
 
-        Properties props = sender.getJavaMailProperties();
-        props.put("mail.transport.protocol", "smtps");
-        props.put("mail.smtps.auth", "true");
-        props.put("mail.smtps.ssl.enable", "true");  // Enable SSL
-        props.put("mail.smtps.starttls.enable", "false");  // Not needed for SSL
-        props.put("mail.smtps.ssl.trust", mailbox.getHost());  // Trust the host
-        props.put("mail.smtps.connectiontimeout", "10000");  // 10 seconds
-        props.put("mail.smtps.timeout", "10000");  // 10 seconds
-        props.put("mail.smtps.writetimeout", "10000");  // 10 seconds
+        // 1. Apply base properties (your working config)
+        props.putAll(baseProperties);
 
-        // Debug to see what's happening
-        props.put("mail.debug", "true");
+        // 2. Add mailbox-specific trust setting
+        props.put("mail.smtps.ssl.trust", mailbox.getHost());
 
+        // 3. Apply any mailbox-specific overrides
+        if (mailbox.getProperties() != null && !mailbox.getProperties().isEmpty()) {
+            props.putAll(mailbox.getProperties());
+        }
+
+        sender.setJavaMailProperties(props);
         return sender;
     }
 }
