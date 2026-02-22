@@ -26,7 +26,7 @@ public class EmailConfig {
     private Map<String, String> baseProperties = new HashMap<>() {{
         put("mail.transport.protocol", "smtp");
         put("mail.smtps.auth", "true");
-        put("mail.smtps.ssl.enable", "false");
+        //put("mail.smtps.ssl.enable", "false");
         put("mail.smtps.starttls.enable", "true");
         put("mail.smtp.starttls.required", "true"); // added for railway deployment
 
