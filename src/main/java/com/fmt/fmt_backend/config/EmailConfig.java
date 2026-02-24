@@ -24,15 +24,13 @@ public class EmailConfig {
 
     // ✅ Base properties (your working config, centralized!)
     private Map<String, String> baseProperties = new HashMap<>() {{
-        put("mail.transport.protocol", "smtp");
-        put("mail.smtp.auth", "true");
-        //put("mail.smtps.ssl.enable", "false");
-        put("mail.smtp.starttls.enable", "true");
-        put("mail.smtp.starttls.required", "true"); // added for railway deployment
-
-        put("mail.smtp.connectiontimeout", "30000");
-        put("mail.smtp.timeout", "10000");
-        put("mail.smtp.writetimeout", "10000");
+        put("mail.transport.protocol", "smtps");
+        put("mail.smtps.auth", "true");
+        put("mail.smtps.ssl.enable", "true");
+        put("mail.smtps.starttls.enable", "false");
+        put("mail.smtps.connectiontimeout", "30000");
+        put("mail.smtps.timeout", "10000");
+        put("mail.smtps.writetimeout", "10000");
         put("mail.debug", "true");
     }};
 
@@ -80,8 +78,7 @@ public class EmailConfig {
         sender.setPort(mailbox.getPort());
         sender.setUsername(mailbox.getUsername());
         sender.setPassword(mailbox.getPassword());
-        //sender.setProtocol("smtps");
-        sender.setProtocol("smtp");
+        sender.setProtocol("smtps");
 
         Properties props = new Properties();
 
@@ -89,8 +86,7 @@ public class EmailConfig {
         props.putAll(baseProperties);
 
         // 2. Add mailbox-specific trust setting
-        //props.put("mail.smtps.ssl.trust", mailbox.getHost());
-        props.put("mail.smtp.ssl.trust", mailbox.getHost());
+        props.put("mail.smtps.ssl.trust", mailbox.getHost());
 
         // 3. Apply any mailbox-specific overrides
         if (mailbox.getProperties() != null && !mailbox.getProperties().isEmpty()) {

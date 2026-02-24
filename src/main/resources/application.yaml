@@ -103,6 +103,16 @@ sms:
   country-code: IN
 
 # ============================================
+# SENDGRID CONFIGURATION
+# ============================================
+sendgrid:
+  api-key: ${SENDGRID_API_KEY}
+  from-email: ${SENDGRID_FROM_EMAIL:noreply-otp@xyzt.com}
+  from-name: ${SENDGRID_FROM_NAME:Trading App}
+  enabled: ${SENDGRID_ENABLED:true}
+
+
+# ============================================
 # JWT CONFIGURATION
 # ============================================
 jwt:
