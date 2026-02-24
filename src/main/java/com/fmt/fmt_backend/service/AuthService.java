@@ -389,7 +389,6 @@ public class AuthService {
      */
     @Transactional
     public ApiResponse<Map<String, Object>> simpleRegister(SignUpRequest signUpRequest, HttpServletRequest request) {
-        log.info("📝 SIMPLE signup for: {}", signUpRequest.getEmail());
 
         // Check if email already exists
         if (userRepository.existsByEmail(signUpRequest.getEmail())) {

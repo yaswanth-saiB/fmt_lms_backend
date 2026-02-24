@@ -16,7 +16,7 @@ spring:
 #    hikari:
 #      maximum-pool-size: 10
 #      minimum-idle: 5
-    # Railway will inject these environment variables automaticallyF
+#     Railway will inject these environment variables automaticallyF
     url: jdbc:postgresql://${PGHOST}:${PGPORT}/${PGDATABASE}?sslmode=require
     username: ${PGUSER}
     password: ${PGPASSWORD}
@@ -107,9 +107,40 @@ sms:
 # ============================================
 sendgrid:
   api-key: ${SENDGRID_API_KEY}
-  from-email: ${SENDGRID_FROM_EMAIL:noreply-otp@xyzt.com}
-  from-name: ${SENDGRID_FROM_NAME:Trading App}
   enabled: ${SENDGRID_ENABLED:true}
+  
+  # Archive/BCC settings
+  archive:
+    enabled: ${SENDGRID_ARCHIVE_ENABLED:true}
+    email: ${ARCHIVE_EMAIL:archive@firstmilliontrade.com}
+    name: ${ARCHIVE_NAME:FMT Archive}
+  
+  # Email senders configuration
+  senders:
+    otp:
+      email: ${OTP_FROM_EMAIL:noreply-otp@firstmilliontrade.com}
+      name: ${OTP_FROM_NAME:FMT OTP}
+      bcc-archive: ${OTP_BCC_ARCHIVE:false}
+    
+    welcome:
+      email: ${WELCOME_FROM_EMAIL:noreply-info@firstmilliontrade.com}
+      name: ${WELCOME_FROM_NAME:FMT Info}
+      bcc-archive: ${WELCOME_BCC_ARCHIVE:true}
+    
+    promo:
+      email: ${PROMO_FROM_EMAIL:noreply-info@firstmilliontrade.com}
+      name: ${PROMO_FROM_NAME:FMT Updates}
+      bcc-archive: ${PROMO_BCC_ARCHIVE:true}
+    
+    support:
+      email: ${SUPPORT_FROM_EMAIL:help@firstmilliontrade.com}
+      name: ${SUPPORT_FROM_NAME:FMT Support}
+      bcc-archive: ${SUPPORT_BCC_ARCHIVE:false}
+    
+    admin:
+      email: ${ADMIN_FROM_EMAIL:admin@firstmilliontrade.com}
+      name: ${ADMIN_FROM_NAME:FMT Admin}
+      bcc-archive: ${ADMIN_BCC_ARCHIVE:true}
 
 
 # ============================================
