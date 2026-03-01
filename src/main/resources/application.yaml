@@ -142,6 +142,15 @@ sendgrid:
       name: ${ADMIN_FROM_NAME:FMT Admin}
       bcc-archive: ${ADMIN_BCC_ARCHIVE:true}
 
+# ============================================
+# ZOOM CONFIGURATION - Server-to-Server OAuth
+# ============================================
+zoom:
+  client-id: ${ZOOM_CLIENT_ID}        # Your Zoom Client ID
+  client-secret: ${ZOOM_CLIENT_SECRET} # Your Zoom Client Secret
+  account-id: ${ZOOM_ACCOUNT_ID}       # Your Zoom Account ID
+  #webhook-secret: ${ZOOM_WEBHOOK_SECRET} # For webhook verification
+  base-url: https://api.zoom.us/v2
 
 # ============================================
 # JWT CONFIGURATION
