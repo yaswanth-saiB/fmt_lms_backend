@@ -59,6 +59,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/refresh-token").permitAll()
                         .requestMatchers("/api/auth/forgot-password").permitAll()
                         .requestMatchers("/api/auth/reset-password").permitAll()
+                        .requestMatchers("/api/enquiry/submit").permitAll()
 
                         //testing purpose public endpoints
                         .requestMatchers("/api/test/**").permitAll()

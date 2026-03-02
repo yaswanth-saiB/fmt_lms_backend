@@ -16,7 +16,7 @@ spring:
 #    hikari:
 #      maximum-pool-size: 10
 #      minimum-idle: 5
-#     Railway will inject these environment variables automaticallyF
+#     Railway will inject these environment variables automatically
     url: jdbc:postgresql://${PGHOST}:${PGPORT}/${PGDATABASE}?sslmode=require
     username: ${PGUSER}
     password: ${PGPASSWORD}
@@ -108,6 +108,7 @@ sms:
 sendgrid:
   api-key: ${SENDGRID_API_KEY}
   enabled: ${SENDGRID_ENABLED:true}
+  admin-email: ${ADMIN_EMAIL:admin@firstmilliontrade.com}
   
   # Archive/BCC settings
   archive:
