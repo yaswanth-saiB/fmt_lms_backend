@@ -14,14 +14,15 @@ public class SendGridProperties {
 
     private String apiKey;
     private boolean enabled = true;
+    private String adminEmail;  // Add this field
     private ArchiveConfig archive = new ArchiveConfig();
     private Map<String, SenderConfig> senders = new HashMap<>();
 
     @Data
     public static class ArchiveConfig {
         private boolean enabled = true;
-        private String email = "archive@xyzt.com";
-        private String name = "Trading App Archive";
+        private String email = "archive@firstmilliontrade.com";
+        private String name = "FNT Archive";
     }
 
     @Data
