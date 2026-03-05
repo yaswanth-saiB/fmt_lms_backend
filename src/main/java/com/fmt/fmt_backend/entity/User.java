@@ -34,14 +34,15 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private String password;
 
-    @Enumerated(EnumType.STRING)  // ✅ Simple mapping
-    @Column(name = "user_role")
+    @Enumerated(EnumType.STRING)
+    @Column(name = "user_role", nullable = false, length = 20)
     private UserRole userRole;
 
     @Column(name = "phone_number")
     private String phoneNumber;
 
-    @Enumerated(EnumType.STRING)  // ✅ Simple mapping
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
     private Gender gender;
 
 

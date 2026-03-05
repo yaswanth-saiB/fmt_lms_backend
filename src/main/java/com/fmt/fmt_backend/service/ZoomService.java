@@ -69,9 +69,11 @@ public class ZoomService {
                     log.info("✅ Zoom access token obtained");
                     return accessToken;
                 })
-                .doOnError(error ->
-                        log.error("❌ Failed to get Zoom access token: {}", error.getMessage()))
-                .onErrorReturn(null);
+                .doOnError(error -> log.error("❌ Failed to get Zoom access token: {}", error.getMessage()))
+                .onErrorResume(e -> {  // ✅ FIX: Use onErrorResume instead of onErrorReturn
+                    log.error("Zoom token error details: ", e);
+                    return Mono.empty();  // Return empty Mono instead of null
+                });
     }
 
     /**
@@ -79,10 +81,18 @@ public class ZoomService {
      */
     public Mono<JsonNode> createMeeting(String topic, LocalDateTime startTime,
                                         int durationMinutes, String mentorEmail) {
+
+        log.info("🚀 Creating Zoom meeting with:");
+        log.info("   Topic: {}", topic);
+        log.info("   Start: {}", startTime);
+        log.info("   Duration: {}", durationMinutes);
+        log.info("   Mentor Email: {}", mentorEmail);
+        log.info("   Client ID: {}", clientId); // Don't log secret!
+
         return getAccessToken()
                 .flatMap(token -> {
-                    if (token == null) {
-                        return Mono.error(new RuntimeException("No access token"));
+                    if (token == null || token.isEmpty()) {
+                        return Mono.error(new RuntimeException("Failed to obtain Zoom access token"));
                     }
 
                     ObjectNode meetingDetails = objectMapper.createObjectNode();
