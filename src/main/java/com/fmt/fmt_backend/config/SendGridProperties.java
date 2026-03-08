@@ -13,7 +13,7 @@ import java.util.Map;
 public class SendGridProperties {
 
     private String apiKey;
-    private boolean enabled = true;
+    private boolean   enabled = true;
     private String adminEmail;  // Add this field
     private ArchiveConfig archive = new ArchiveConfig();
     private Map<String, SenderConfig> senders = new HashMap<>();

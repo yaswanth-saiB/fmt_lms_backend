@@ -9,18 +9,18 @@ spring:
   # DATABASE CONFIGURATION
   # ==========================================
   datasource:
-#    url: ${DATABASE_URL}
-#    username: ${DATABASE_USERNAME}
-#    password: ${DATABASE_PASSWORD}
-#    driver-class-name: org.postgresql.Driver
-#    hikari:
-#      maximum-pool-size: 10
-#      minimum-idle: 5
-#     Railway will inject these environment variables automatically
-    url: jdbc:postgresql://${PGHOST}:${PGPORT}/${PGDATABASE}?sslmode=require
-    username: ${PGUSER}
-    password: ${PGPASSWORD}
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+#     Railway will inject these environment variables automatically
+#    url: jdbc:postgresql://${PGHOST}:${PGPORT}/${PGDATABASE}?sslmode=require
+#    username: ${PGUSER}
+#    password: ${PGPASSWORD}
+#    driver-class-name: org.postgresql.Driver
 
   server:
     port: ${PORT:8080}  # Railway injects PORT
@@ -44,6 +44,25 @@ spring:
     mode: HTML
     encoding: UTF-8
     cache: false  # true in production
+
+  # Spring Boot 3.5 native HTTP client config (no manual RestTemplate factory needed)
+  http:
+    client:
+      factory: http-components
+      connect-timeout: 6s
+      read-timeout: 10s
+
+# ─── Market Data Config ───────────────────────────────────────────────────────
+market:
+  schedule:
+    # Market hours: 9 AM - 4 PM IST, Mon-Fri
+    # For local dev/testing override this in application-dev.yml
+    cron: "0 0/30 9-16 * * MON-FRI"
+    timezone: "Asia/Kolkata"
+
+  symbols:
+    nse-count: 25   # how many NSE stocks to track
+    bse-count: 10   # how many BSE stocks to track
 
 
 # ============================================

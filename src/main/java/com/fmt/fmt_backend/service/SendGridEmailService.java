@@ -144,7 +144,7 @@ public class SendGridEmailService {
     @Async
     public void sendEnquiryNotification(Enquiry enquiry) {
         SenderInfo sender = senderMap.get(EmailType.ENQUIRY);
-        String subject = "📋 New Enquiry Received - Trading App";
+        String subject = "📋 New Enquiry Received - FMT App";
 
         String htmlContent = String.format("""
             <!DOCTYPE html>

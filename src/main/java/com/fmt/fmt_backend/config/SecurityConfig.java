@@ -63,7 +63,10 @@ public class SecurityConfig {
 
                         //testing purpose public endpoints
                         .requestMatchers("/api/test/**").permitAll()
-                        .requestMatchers("/api/public/**").permitAll()  // Add this
+                        .requestMatchers("/api/public/**").permitAll()
+
+                        // Allow all market endpoints
+                        .requestMatchers("/api/v1/market/**").permitAll()
 
                         // Protected endpoints
                         .requestMatchers("/api/auth/logout").authenticated()
