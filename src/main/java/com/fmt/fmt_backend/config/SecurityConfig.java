@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -53,6 +54,7 @@ public class SecurityConfig {
                 // Authorize requests
                 .authorizeHttpRequests(auth -> auth
                         // ✅ First, specify the PUBLIC ones that should NOT need auth
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() //With it → preflight passes → CORS responds properly → actual request goes through ✅
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/login/verify-otp").permitAll()
                         .requestMatchers("/api/auth/signup/**").permitAll()
@@ -102,11 +104,15 @@ public class SecurityConfig {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
+        log.info("🚀 CORS Config loaded - new version");
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(Arrays.asList(
                 "http://localhost:3000",      // React development
                 "http://localhost:5173",      // Vite development
-                "https://fmtlmsbackend-production.up.railway.app"    // Production frontend
+                "https://api.firstmilliontrade.com",
+                "https://www.api.firstmilliontrade.com",
+                "https://firstmilliontrade.com",
+                "https://www.firstmilliontrade.com"
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList(
