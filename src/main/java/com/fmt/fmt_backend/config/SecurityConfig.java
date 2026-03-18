@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -25,6 +26,7 @@ import java.util.Arrays;
 
 @Configuration
 @EnableWebSecurity
+@EnableScheduling
 @RequiredArgsConstructor
 @Slf4j
 public class SecurityConfig {
@@ -53,35 +55,36 @@ public class SecurityConfig {
 
                 // Authorize requests
                 .authorizeHttpRequests(auth -> auth
-                        // ✅ First, specify the PUBLIC ones that should NOT need auth
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() //With it → preflight passes → CORS responds properly → actual request goes through ✅
+                        // Public — no token required
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // Auth — public signup & login
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/login/verify-otp").permitAll()
                         .requestMatchers("/api/auth/signup/**").permitAll()
-                        .requestMatchers("/api/auth/refresh-token").permitAll()
+                        // Token endpoints — refresh/rotate must be public because the
+                        // access token may be expired when the browser calls them
+                        .requestMatchers("/api/auth/token/refresh").permitAll()
+                        .requestMatchers("/api/auth/token/rotate").permitAll()
+                        // Other public auth
                         .requestMatchers("/api/auth/forgot-password").permitAll()
                         .requestMatchers("/api/auth/reset-password").permitAll()
                         .requestMatchers("/api/enquiry/submit").permitAll()
-
-                        //testing purpose public endpoints
+                        // Docs & infra
+                        .requestMatchers("/swagger-ui/**").permitAll()
+                        .requestMatchers("/v3/api-docs/**").permitAll()
+                        .requestMatchers("/actuator/**").permitAll()
+                        // Testing
                         .requestMatchers("/api/test/**").permitAll()
-                        .requestMatchers("/api/public/**").permitAll()  // Add this
+                        .requestMatchers("/api/public/**").permitAll()
 
-                        // Protected endpoints
+                        // Protected — require valid access token
                         .requestMatchers("/api/auth/logout").authenticated()
                         .requestMatchers("/api/auth/me").authenticated()
+                        .requestMatchers("/api/auth/change-password").authenticated()
+                        .requestMatchers("/api/auth/token/**").authenticated()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/mentor/**").hasRole("MENTOR")
                         .requestMatchers("/api/student/**").hasRole("STUDENT")
-                        .requestMatchers("/api/auth/change-password").authenticated()
-
-                        // Other public endpoints
-                        .requestMatchers("/api/test/**").permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
-                        .requestMatchers("/swagger-ui/**").permitAll()
-                        .requestMatchers("/v3/api-docs/**").permitAll()
-
-                        // Protected endpoints
                         .requestMatchers("/api/user/**").authenticated()
                         .requestMatchers("/api/devices/**").authenticated()
 
@@ -107,12 +110,13 @@ public class SecurityConfig {
         log.info("🚀 CORS Config loaded - new version");
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(Arrays.asList(
-                "http://localhost:3000",      // React development
-                "http://localhost:5173",      // Vite development
-                "https://api.firstmilliontrade.com",
-                "https://www.api.firstmilliontrade.com",
-                "https://firstmilliontrade.com",
-                "https://www.firstmilliontrade.com"
+                "http://localhost:3000",                    // React dev (CRA)
+                "http://localhost:5173",                    // React dev (Vite)
+                "https://firstmilliontrade.com",           // Home page
+                "https://www.firstmilliontrade.com",       // Home page (www)
+                "https://app.firstmilliontrade.com",       // Login/signup app
+                "https://www.app.firstmilliontrade.com",   // Login/signup app (www)
+                "https://api.firstmilliontrade.com"        // Backend self-reference
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList(
@@ -120,7 +124,7 @@ public class SecurityConfig {
                 "Accept", "Origin", "Access-Control-Request-Method",
                 "Access-Control-Request-Headers"
         ));
-        configuration.setExposedHeaders(Arrays.asList("Authorization"));
+        configuration.setExposedHeaders(Arrays.asList("Authorization", "Set-Cookie"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L); // 1 hour
 

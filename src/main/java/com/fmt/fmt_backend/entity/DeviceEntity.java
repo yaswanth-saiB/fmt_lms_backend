@@ -1,13 +1,18 @@
 package com.fmt.fmt_backend.entity;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
 @Table(name = "devices")
 @Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class DeviceEntity {
 
     @Id
@@ -31,10 +36,13 @@ public class DeviceEntity {
 
     private LocalDateTime firstSeenAt;
 
+    @Builder.Default
     private boolean isActive = true;
 
+    @Builder.Default
     private boolean isStreaming = false; // For video streaming
 
-    @Column(nullable = false)
-    private LocalDateTime createdAt = LocalDateTime.now();
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 }

@@ -13,6 +13,7 @@ import javax.crypto.SecretKey;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 
 @Service
@@ -95,6 +96,22 @@ public class JwtService {
     private SecretKey getSignKey() {
         byte[] keyBytes = Decoders.BASE64.decode(secretKey);
         return Keys.hmacShaKeyFor(keyBytes);
+    }
+
+    // ========== Custom claim extractors ==========
+
+    public UUID extractSessionId(String token) {
+        String val = extractClaim(token, claims -> claims.get("sessionId", String.class));
+        return (val != null) ? UUID.fromString(val) : null;
+    }
+
+    public UUID extractUserId(String token) {
+        String val = extractClaim(token, claims -> claims.get("userId", String.class));
+        return (val != null) ? UUID.fromString(val) : null;
+    }
+
+    public String extractRole(String token) {
+        return extractClaim(token, claims -> claims.get("role", String.class));
     }
 
     // Get expiration time in seconds

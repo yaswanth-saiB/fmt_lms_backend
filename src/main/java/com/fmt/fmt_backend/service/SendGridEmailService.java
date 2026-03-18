@@ -101,7 +101,7 @@ public class SendGridEmailService {
     @Async
     public void sendOtpEmail(String to, String otp, int expiryMinutes) {
         SenderInfo sender = senderMap.get(EmailType.OTP);
-        String subject = "Your Trading App Verification Code";
+        String subject = "Your First Million Trade Verification Code";
         String htmlContent = buildOtpTemplate(otp, expiryMinutes);
 
         sendEmail(to, subject, htmlContent, sender, EmailType.OTP);
@@ -110,7 +110,7 @@ public class SendGridEmailService {
     @Async
     public void sendWelcomeEmail(String to, String firstName, String role) {
         SenderInfo sender = senderMap.get(EmailType.WELCOME);
-        String subject = "Welcome to Trading App, " + firstName + "!";
+        String subject = "Welcome to First Million Trade, " + firstName + "!";
         String htmlContent = buildWelcomeTemplate(firstName, role);
 
         sendEmail(to, subject, htmlContent, sender, EmailType.WELCOME);
@@ -201,7 +201,7 @@ public class SendGridEmailService {
                         </div>
                     </div>
                     <div class="footer">
-                        This is an automated notification from Trading App<br>
+                        This is an automated notification from First Million Trade<br>
                         Please contact the enquirer within 24 hours.
                     </div>
                 </div>
@@ -268,13 +268,20 @@ public class SendGridEmailService {
         return String.format("""
             <!DOCTYPE html>
             <html>
-            <body style="font-family: Arial, sans-serif;">
-                <h2>Verification Code</h2>
-                <p>Your verification code is:</p>
-                <div style="background-color: #f0f0f0; padding: 20px; text-align: center;">
-                    <span style="font-size: 36px; font-weight: bold;">%s</span>
+            <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0;">
+                <div style="max-width: 560px; margin: 40px auto; background: #ffffff; border-radius: 8px; padding: 40px;">
+                    <h2 style="color: #1a1a1a; margin-bottom: 8px;">First Million Trade</h2>
+                    <p style="color: #555;">Use the verification code below to continue:</p>
+                    <div style="background-color: #f0f4ff; border-radius: 6px; padding: 24px; text-align: center; margin: 24px 0;">
+                        <span style="font-size: 40px; font-weight: bold; letter-spacing: 8px; color: #1a1a1a;">%s</span>
+                    </div>
+                    <p style="color: #555;">This code expires in <strong>%d minutes</strong>. Do not share it with anyone.</p>
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
+                    <p style="font-size: 12px; color: #999;">
+                        If you did not request this code, you can safely ignore this email.<br>
+                        &copy; First Million Trade
+                    </p>
                 </div>
-                <p>This code will expire in %d minutes.</p>
             </body>
             </html>
             """, otp, expiryMinutes);
@@ -284,10 +291,29 @@ public class SendGridEmailService {
         return String.format("""
             <!DOCTYPE html>
             <html>
-            <body style="font-family: Arial, sans-serif;">
-                <h2>Welcome to Trading App, %s!</h2>
-                <p>We're excited to have you on board as a %s.</p>
-                <p>Get started by exploring our courses and completing your profile.</p>
+            <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0;">
+                <div style="max-width: 560px; margin: 40px auto; background: #ffffff; border-radius: 8px; padding: 40px;">
+                    <h2 style="color: #1a1a1a;">Welcome to First Million Trade, %s!</h2>
+                    <p style="color: #555; line-height: 1.6;">
+                        Your account has been successfully created. We're excited to have you on board.
+                    </p>
+                    <p style="color: #555; line-height: 1.6;">
+                        You can now log in and start exploring our trading courses and live sessions.
+                    </p>
+                    <div style="margin: 32px 0;">
+                        <a href="https://app.firstmilliontrade.com"
+                           style="background-color: #1a1a1a; color: #ffffff; padding: 14px 28px;
+                                  text-decoration: none; border-radius: 6px; font-weight: bold;">
+                            Go to Dashboard
+                        </a>
+                    </div>
+                    <p style="color: #555; font-size: 14px;">
+                        If you have any questions, reply to this email or reach us at
+                        <a href="mailto:help@firstmilliontrade.com" style="color: #1a1a1a;">help@firstmilliontrade.com</a>.
+                    </p>
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
+                    <p style="font-size: 12px; color: #999;">&copy; First Million Trade. All rights reserved.</p>
+                </div>
             </body>
             </html>
             """, firstName, role);
@@ -297,14 +323,24 @@ public class SendGridEmailService {
         return String.format("""
             <!DOCTYPE html>
             <html>
-            <body style="font-family: Arial, sans-serif;">
-                <h2>Hello %s!</h2>
-                <p>Check out what's new at Trading App:</p>
-                <p><strong>%s</strong></p>
-                <p><a href="https://yourapp.com/courses">Explore Now</a></p>
-                <p style="font-size: 12px; color: #999;">
-                    To unsubscribe, <a href="https://yourapp.com/unsubscribe">click here</a>
-                </p>
+            <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0;">
+                <div style="max-width: 560px; margin: 40px auto; background: #ffffff; border-radius: 8px; padding: 40px;">
+                    <h2 style="color: #1a1a1a;">Hello %s!</h2>
+                    <p style="color: #555;">Here's what's new at First Million Trade:</p>
+                    <p style="color: #1a1a1a; font-weight: bold;">%s</p>
+                    <div style="margin: 32px 0;">
+                        <a href="https://firstmilliontrade.com/courses"
+                           style="background-color: #1a1a1a; color: #ffffff; padding: 14px 28px;
+                                  text-decoration: none; border-radius: 6px; font-weight: bold;">
+                            Explore Now
+                        </a>
+                    </div>
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
+                    <p style="font-size: 12px; color: #999;">
+                        &copy; First Million Trade. &nbsp;
+                        <a href="https://firstmilliontrade.com/unsubscribe" style="color: #999;">Unsubscribe</a>
+                    </p>
+                </div>
             </body>
             </html>
             """, firstName, campaign);
@@ -314,12 +350,16 @@ public class SendGridEmailService {
         return String.format("""
             <!DOCTYPE html>
             <html>
-            <body style="font-family: Arial, sans-serif;">
-                <p>%s</p>
-                <hr>
-                <p style="font-size: 12px; color: #999;">
-                    Trading App Support - We're here to help!
-                </p>
+            <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0;">
+                <div style="max-width: 560px; margin: 40px auto; background: #ffffff; border-radius: 8px; padding: 40px;">
+                    <h2 style="color: #1a1a1a;">First Million Trade Support</h2>
+                    <p style="color: #555; line-height: 1.6;">%s</p>
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
+                    <p style="font-size: 12px; color: #999;">
+                        First Million Trade Support &mdash; We're here to help.<br>
+                        <a href="mailto:help@firstmilliontrade.com" style="color: #999;">help@firstmilliontrade.com</a>
+                    </p>
+                </div>
             </body>
             </html>
             """, message);
@@ -329,12 +369,15 @@ public class SendGridEmailService {
         return String.format("""
             <!DOCTYPE html>
             <html>
-            <body style="font-family: Arial, sans-serif;">
-                <p>%s</p>
-                <hr>
-                <p style="font-size: 12px; color: #999;">
-                    This is an automated admin notification.
-                </p>
+            <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0;">
+                <div style="max-width: 560px; margin: 40px auto; background: #ffffff; border-radius: 8px; padding: 40px;">
+                    <h2 style="color: #1a1a1a;">Admin Notification</h2>
+                    <p style="color: #555; line-height: 1.6;">%s</p>
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
+                    <p style="font-size: 12px; color: #999;">
+                        Automated notification &mdash; First Million Trade
+                    </p>
+                </div>
             </body>
             </html>
             """, message);

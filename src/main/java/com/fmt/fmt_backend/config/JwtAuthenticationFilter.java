@@ -1,5 +1,6 @@
 package com.fmt.fmt_backend.config;
 
+import com.fmt.fmt_backend.service.CookieService;
 import com.fmt.fmt_backend.service.CustomUserDetailsService;
 import com.fmt.fmt_backend.service.JwtService;
 import jakarta.servlet.FilterChain;
@@ -15,14 +16,27 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
-import java.io.IOException;
 
+import java.io.IOException;
+import java.util.Optional;
+
+/**
+ * Intercepts every request and authenticates users via JWT.
+ *
+ * Token lookup order:
+ *  1. access_token HttpOnly cookie  (used by browsers / React frontend)
+ *  2. Authorization: Bearer <token> header (used by Swagger UI / API clients)
+ *
+ * This dual approach lets us test with Swagger while still using secure
+ * cookie-based auth in production.
+ */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final CookieService cookieService;
     private final CustomUserDetailsService userDetailsService;
 
     @Override
@@ -34,65 +48,54 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         final String requestPath = request.getServletPath();
         log.debug("🔍 JWT Filter checking path: {}", requestPath);
 
-        // Get JWT token from request
-        final String authHeader = request.getHeader("Authorization");
-        final String jwt;
-        final String userEmail;
+        // 1. Try cookie first
+        String jwt = null;
+        Optional<String> cookieToken = cookieService.getAccessTokenFromCookies(request);
+        if (cookieToken.isPresent()) {
+            jwt = cookieToken.get();
+            log.debug("🍪 JWT found in cookie for path: {}", requestPath);
+        } else {
+            // 2. Fallback to Authorization header (Swagger / API clients)
+            String authHeader = request.getHeader("Authorization");
+            if (StringUtils.hasText(authHeader) && authHeader.startsWith("Bearer ")) {
+                jwt = authHeader.substring(7);
+                log.debug("📝 JWT found in Authorization header for path: {}", requestPath);
+            }
+        }
 
-        // Check if Authorization header exists and starts with "Bearer "
-        if (!StringUtils.hasText(authHeader) || !authHeader.startsWith("Bearer ")) {
-            log.debug("⏩ No Bearer token found for path: {}", requestPath);
+        if (jwt == null) {
+            log.debug("⏩ No JWT found for path: {}", requestPath);
             filterChain.doFilter(request, response);
             return;
         }
 
-        // Extract JWT token (remove "Bearer " prefix)
-        jwt = authHeader.substring(7);
-        log.debug("📝 JWT token extracted (length: {})", jwt.length());
-
         try {
-            // Extract username from JWT
-            userEmail = jwtService.extractUsername(jwt);
+            String userEmail = jwtService.extractUsername(jwt);
             log.debug("📧 Extracted email from token: {}", userEmail);
 
-            // IMPORTANT: Always check if userEmail is not null
             if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-                // Load user details from database
-                log.debug("👤 Loading user details for: {}", userEmail);
                 UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
-                log.debug("✅ User details loaded successfully");
 
-                // Validate token
                 if (jwtService.isTokenValid(jwt, userDetails)) {
-                    log.debug("🔐 Token validated successfully");
+                    log.debug("🔐 Token validated for user: {}", userEmail);
 
-                    // Create authentication token
                     UsernamePasswordAuthenticationToken authToken =
                             new UsernamePasswordAuthenticationToken(
                                     userDetails,
-                                    null, // credentials are null because we use JWT
+                                    null,
                                     userDetails.getAuthorities()
                             );
-
-                    // Add request details
-                    authToken.setDetails(
-                            new WebAuthenticationDetailsSource().buildDetails(request)
-                    );
-
-                    // Set authentication in context
+                    authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authToken);
 
                     log.info("✅ Authenticated user: {} for path: {}", userEmail, requestPath);
                 } else {
                     log.warn("❌ Token invalid for user: {}", userEmail);
                 }
-            } else {
-                log.debug("ℹ️ User email is null or authentication already exists in context");
             }
         } catch (Exception e) {
             log.error("💥 JWT authentication failed: {}", e.getMessage());
-            // Don't throw - let the request continue
         }
 
         filterChain.doFilter(request, response);

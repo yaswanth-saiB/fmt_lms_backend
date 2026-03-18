@@ -28,7 +28,15 @@ public class RefreshTokenEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "device_id")
-    private DeviceEntity device;  // NEW: Link to device
+    private DeviceEntity device;
+
+    /**
+     * The session this refresh token belongs to.
+     * When a new access token is issued on refresh, the same sessionId is
+     * embedded in it — keeping the session identity continuous.
+     */
+    @Column(name = "session_id")
+    private UUID sessionId;
 
     @Column(nullable = false, unique = true)
     private String token;

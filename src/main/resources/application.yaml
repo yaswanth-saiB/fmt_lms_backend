@@ -186,6 +186,16 @@ app:
   enable-bcc: true
   bcc-address: archive@firstmilliontrade.com
 
+  # ==========================================
+  # COOKIE CONFIGURATION
+  # ==========================================
+  cookie:
+    # Set to true in production (HTTPS only). Use env var COOKIE_SECURE=true on AWS/Railway.
+    secure: ${COOKIE_SECURE:false}
+    # Leave blank for localhost. Set to .firstmilliontrade.com in prod so
+    # both api.firstmilliontrade.com and firstmilliontrade.com share cookies.
+    domain: ${COOKIE_DOMAIN:}
+
 
 # Swagger/OpenAPI Configuration
 springdoc:

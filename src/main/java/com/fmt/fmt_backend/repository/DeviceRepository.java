@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,4 +26,7 @@ public interface DeviceRepository extends JpaRepository<DeviceEntity, UUID> {
     @Modifying
     @Query("UPDATE DeviceEntity d SET d.isActive = false WHERE d.user = :user AND d.id NOT IN :excludeIds")
     void deactivateOtherDevices(@Param("user") User user, @Param("excludeIds") List<UUID> excludeIds);
+
+    @Query("SELECT d FROM DeviceEntity d WHERE d.lastActiveAt < :cutoff")
+    List<DeviceEntity> findByLastActiveAtBefore(@Param("cutoff") LocalDateTime cutoff);
 }

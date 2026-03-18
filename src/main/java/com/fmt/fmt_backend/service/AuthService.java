@@ -198,15 +198,12 @@ public class AuthService {
             // Generate tokens for auto-login
             Map<String, Object> tokens = tokenService.generateTokenPair(savedUser, request);
 
-            Map<String, Object> response = new java.util.HashMap<>();
-            response.put("user", Map.of(
-                    "id", savedUser.getId(),
-                    "email", savedUser.getEmail(),
-                    "firstName", savedUser.getFirstName(),
-                    "lastName", savedUser.getLastName(),
-                    "role", savedUser.getUserRole()
-            ));
-            response.putAll(tokens);
+            Map<String, Object> response = new HashMap<>(tokens);
+            response.put("userId", savedUser.getId().toString());
+            response.put("email", savedUser.getEmail());
+            response.put("firstName", savedUser.getFirstName());
+            response.put("lastName", savedUser.getLastName());
+            response.put("role", savedUser.getUserRole().name());
 
             return ApiResponse.success("Registration successful! Welcome to Trading App.", response);
 
@@ -316,7 +313,15 @@ public class AuthService {
         // Generate tokens with device info
         Map<String, Object> tokens = tokenService.generateTokenPair(user, request);
 
-        return ApiResponse.success("Login successful", tokens);
+        // Build response — controller will extract tokens for cookies and strip them from body
+        Map<String, Object> responseData = new HashMap<>(tokens);
+        responseData.put("userId", user.getId().toString());
+        responseData.put("email", user.getEmail());
+        responseData.put("firstName", user.getFirstName());
+        responseData.put("lastName", user.getLastName());
+        responseData.put("role", user.getUserRole().name());
+
+        return ApiResponse.success("Login successful", responseData);
     }
 
     // ========== LOGOUT ==========
@@ -430,15 +435,12 @@ public class AuthService {
         // Generate tokens
         Map<String, Object> tokens = tokenService.generateTokenPair(savedUser, request);
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("user", Map.of(
-                "id", savedUser.getId(),
-                "email", savedUser.getEmail(),
-                "firstName", savedUser.getFirstName(),
-                "lastName", savedUser.getLastName(),
-                "role", savedUser.getUserRole()
-        ));
-        response.putAll(tokens);
+        Map<String, Object> response = new HashMap<>(tokens);
+        response.put("userId", savedUser.getId().toString());
+        response.put("email", savedUser.getEmail());
+        response.put("firstName", savedUser.getFirstName());
+        response.put("lastName", savedUser.getLastName());
+        response.put("role", savedUser.getUserRole().name());
 
         return ApiResponse.success("Simple signup successful", response);
     }

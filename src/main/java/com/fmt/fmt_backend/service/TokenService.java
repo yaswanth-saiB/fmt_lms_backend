@@ -3,9 +3,11 @@ package com.fmt.fmt_backend.service;
 import com.fmt.fmt_backend.entity.DeviceEntity;
 import com.fmt.fmt_backend.entity.RefreshTokenEntity;
 import com.fmt.fmt_backend.entity.User;
+import com.fmt.fmt_backend.entity.UserSession;
 import com.fmt.fmt_backend.repository.DeviceRepository;
 import com.fmt.fmt_backend.repository.RefreshTokenRepository;
 import com.fmt.fmt_backend.repository.UserRepository;
+import com.fmt.fmt_backend.repository.UserSessionRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
@@ -31,6 +33,7 @@ import java.util.UUID;
 public class TokenService {
 
     private final RefreshTokenRepository refreshTokenRepository;
+    private final UserSessionRepository userSessionRepository;
     private final DeviceRepository deviceRepository;
     private final UserRepository userRepository;
     private final DeviceService deviceService;
@@ -45,44 +48,55 @@ public class TokenService {
     private long refreshTokenExpiration;
 
     /**
-     * Generate both access token and refresh token for a user
+     * Generate both access token and refresh token for a user.
+     * Also creates a UserSession so the sessionId can be tracked.
+     *
+     * Returned map keys: accessToken, refreshToken, sessionId, expiresIn, tokenType, deviceId
      */
     @Transactional
     public Map<String, Object> generateTokenPair(User user, HttpServletRequest request) {
         log.info("🔑 Generating token pair for user: {}", user.getEmail());
 
-        // NOW WORKS - passing request parameter
         String deviceFingerprint = deviceService.generateDeviceFingerprint(request);
-
-        // Register or update device - also needs request
         DeviceEntity device = deviceService.registerDevice(user, deviceFingerprint, request);
 
-        // Generate access token (JWT)
-        String accessToken = generateAccessToken(user, device);
+        // Create a new session — sessionId is the identity embedded in the JWT
+        UUID sessionId = UUID.randomUUID();
+        UserSession session = UserSession.builder()
+                .sessionId(sessionId)
+                .user(user)
+                .device(device)
+                .expiresAt(LocalDateTime.now().plusSeconds(accessTokenExpiration / 1000))
+                .ipAddress(extractClientIp(request))
+                .active(true)
+                .build();
+        userSessionRepository.save(session);
 
-        // Generate refresh token (random UUID)
-        String refreshToken = generateRefreshToken(user, device);
+        String accessToken = generateAccessToken(user, device, sessionId);
+        String refreshToken = generateRefreshToken(user, device, sessionId);
 
         Map<String, Object> tokens = new HashMap<>();
         tokens.put("accessToken", accessToken);
         tokens.put("refreshToken", refreshToken);
+        tokens.put("sessionId", sessionId.toString());
         tokens.put("expiresIn", accessTokenExpiration / 1000);
         tokens.put("tokenType", "Bearer");
-        tokens.put("deviceId", device.getId());
+        tokens.put("deviceId", device.getId().toString());
 
         return tokens;
     }
 
     /**
-     * Generate JWT access token
+     * Generate JWT access token.
+     * Claims include: userId, sessionId, role, deviceId (all as Strings for safe JSON serialisation).
      */
-    public String generateAccessToken(User user, DeviceEntity device) {
+    public String generateAccessToken(User user, DeviceEntity device, UUID sessionId) {
         Map<String, Object> claims = new HashMap<>();
-        claims.put("userId", user.getId());
+        claims.put("userId", user.getId().toString());
+        claims.put("sessionId", sessionId.toString());
         claims.put("email", user.getEmail());
-        claims.put("role", user.getUserRole());
-        claims.put("deviceId", device.getId());
-        claims.put("deviceFingerprint", device.getDeviceFingerprint());
+        claims.put("role", user.getUserRole().name());
+        claims.put("deviceId", device.getId().toString());
 
         return Jwts.builder()
                 .claims(claims)
@@ -94,19 +108,19 @@ public class TokenService {
     }
 
     /**
-     * Generate refresh token (stored in database)
+     * Generate and persist a refresh token linked to the given session.
      */
     @Transactional
-    public String generateRefreshToken(User user, DeviceEntity device) {
-        // Revoke any existing refresh tokens for this device
+    public String generateRefreshToken(User user, DeviceEntity device, UUID sessionId) {
+        // Revoke existing refresh tokens for this device
         refreshTokenRepository.revokeAllDeviceTokens(device.getId(), LocalDateTime.now());
 
-        // Generate new refresh token
         String tokenValue = UUID.randomUUID().toString();
 
         RefreshTokenEntity refreshToken = RefreshTokenEntity.builder()
                 .user(user)
                 .device(device)
+                .sessionId(sessionId)
                 .token(tokenValue)
                 .expiresAt(LocalDateTime.now().plusSeconds(refreshTokenExpiration / 1000))
                 .revoked(false)
@@ -114,29 +128,26 @@ public class TokenService {
 
         refreshTokenRepository.save(refreshToken);
 
-        log.info("✅ Refresh token generated for device: {}", device.getId());
+        log.info("✅ Refresh token generated for device: {}, session: {}", device.getId(), sessionId);
         return tokenValue;
     }
 
     /**
-     * Refresh access token using valid refresh token
+     * Refresh access token using valid refresh token.
+     * Re-uses the SAME sessionId so the session stays continuous.
      */
     @Transactional
     public Map<String, Object> refreshAccessToken(String refreshTokenValue, String currentDeviceFingerprint) {
         log.info("🔄 Refreshing access token");
 
-
-        // Find refresh token
         RefreshTokenEntity refreshToken = refreshTokenRepository.findByToken(refreshTokenValue)
                 .orElseThrow(() -> new RuntimeException("Invalid refresh token"));
 
-        // Validate token
         if (!refreshToken.isValid()) {
             log.warn("❌ Invalid or expired refresh token: {}", refreshToken.getId());
             throw new RuntimeException("Refresh token expired or revoked");
         }
 
-        // Validate device fingerprint matches
         if (!refreshToken.getDevice().getDeviceFingerprint().equals(currentDeviceFingerprint)) {
             log.warn("❌ Device fingerprint mismatch for refresh token");
             throw new RuntimeException("Invalid device for refresh token");
@@ -144,33 +155,33 @@ public class TokenService {
 
         User user = refreshToken.getUser();
         DeviceEntity device = refreshToken.getDevice();
+        UUID sessionId = refreshToken.getSessionId(); // keep the same sessionId
 
-        // Update device last active
         device.setLastActiveAt(LocalDateTime.now());
         deviceRepository.save(device);
 
-        // Generate new access token (keep same refresh token for now)
-        String newAccessToken = generateAccessToken(user, device);
+        // New access token, same refresh token, same session
+        String newAccessToken = generateAccessToken(user, device, sessionId);
 
         Map<String, Object> tokens = new HashMap<>();
         tokens.put("accessToken", newAccessToken);
-        tokens.put("refreshToken", refreshTokenValue); // Same refresh token
+        tokens.put("refreshToken", refreshTokenValue);
+        tokens.put("sessionId", sessionId != null ? sessionId.toString() : null);
         tokens.put("expiresIn", accessTokenExpiration / 1000);
         tokens.put("tokenType", "Bearer");
 
-        log.info("✅ Access token refreshed for user: {}", user.getEmail());
-
+        log.info("✅ Access token refreshed for user: {}, session: {}", user.getEmail(), sessionId);
         return tokens;
     }
 
     /**
-     * Rotate refresh token (issue new one, revoke old)
+     * Rotate refresh token — issues a new refresh token (revokes old one).
+     * The sessionId is preserved so it stays the same login session.
      */
     @Transactional
     public Map<String, Object> rotateRefreshToken(String oldRefreshTokenValue, String currentDeviceFingerprint) {
         log.info("🔄 Rotating refresh token");
 
-        // Find and validate old token
         RefreshTokenEntity oldToken = refreshTokenRepository.findByToken(oldRefreshTokenValue)
                 .orElseThrow(() -> new RuntimeException("Invalid refresh token"));
 
@@ -182,51 +193,60 @@ public class TokenService {
             throw new RuntimeException("Invalid device for refresh token");
         }
 
-        // Revoke old token
+        UUID sessionId = oldToken.getSessionId(); // preserve session
+
         oldToken.setRevoked(true);
         oldToken.setRevokedAt(LocalDateTime.now());
         oldToken.setRevokedReason("rotated");
         refreshTokenRepository.save(oldToken);
 
-        // Generate new token pair
         User user = oldToken.getUser();
         DeviceEntity device = oldToken.getDevice();
 
-        // Update device last active
         device.setLastActiveAt(LocalDateTime.now());
         deviceRepository.save(device);
 
-        // Generate new tokens
-        String newAccessToken = generateAccessToken(user, device);
-        String newRefreshToken = generateRefreshToken(user, device);
+        String newAccessToken = generateAccessToken(user, device, sessionId);
+        String newRefreshToken = generateRefreshToken(user, device, sessionId);
 
         Map<String, Object> tokens = new HashMap<>();
         tokens.put("accessToken", newAccessToken);
         tokens.put("refreshToken", newRefreshToken);
+        tokens.put("sessionId", sessionId != null ? sessionId.toString() : null);
         tokens.put("expiresIn", accessTokenExpiration / 1000);
         tokens.put("tokenType", "Bearer");
 
-        log.info("✅ Refresh token rotated for user: {}", user.getEmail());
-
+        log.info("✅ Refresh token rotated for user: {}, session: {}", user.getEmail(), sessionId);
         return tokens;
     }
 
     /**
-     * Revoke all refresh tokens for a user (logout from all devices)
+     * Revoke all refresh tokens and sessions for a user (logout from all devices)
      */
     @Transactional
     public void revokeAllUserTokens(User user) {
         refreshTokenRepository.revokeAllUserTokens(user, LocalDateTime.now());
-        log.info("🔒 All tokens revoked for user: {}", user.getEmail());
+        userSessionRepository.revokeAllUserSessions(user, LocalDateTime.now());
+        log.info("🔒 All tokens and sessions revoked for user: {}", user.getEmail());
     }
 
     /**
-     * Revoke refresh tokens for a specific device
+     * Revoke refresh tokens and sessions for a specific device
      */
     @Transactional
     public void revokeDeviceTokens(UUID deviceId) {
         refreshTokenRepository.revokeAllDeviceTokens(deviceId, LocalDateTime.now());
-        log.info("🔒 Tokens revoked for device: {}", deviceId);
+        userSessionRepository.revokeDeviceSessions(deviceId, LocalDateTime.now());
+        log.info("🔒 Tokens and sessions revoked for device: {}", deviceId);
+    }
+
+    /**
+     * Revoke a single session by sessionId (targeted logout)
+     */
+    @Transactional
+    public void revokeSession(UUID sessionId) {
+        userSessionRepository.revokeSession(sessionId, LocalDateTime.now());
+        log.info("🔒 Session revoked: {}", sessionId);
     }
 
     /**
@@ -274,17 +294,28 @@ public class TokenService {
     }
 
     /**
-     * Cleanup expired and revoked tokens (runs daily at 2 AM)
+     * Cleanup expired and revoked tokens/sessions (runs daily at 2 AM)
      */
     @Scheduled(cron = "0 0 2 * * ?")
     @Transactional
     public void cleanupExpiredTokens() {
-        log.info("🧹 Starting cleanup of expired refresh tokens");
+        log.info("🧹 Starting cleanup of expired refresh tokens and sessions");
 
         LocalDateTime now = LocalDateTime.now();
         refreshTokenRepository.deleteExpiredAndRevoked(now);
+        userSessionRepository.deleteExpiredInactive(now);
 
         log.info("✅ Cleanup completed");
+    }
+
+    // ========== PRIVATE HELPERS ==========
+
+    private String extractClientIp(HttpServletRequest request) {
+        String xfHeader = request.getHeader("X-Forwarded-For");
+        if (xfHeader != null && !xfHeader.isEmpty()) {
+            return xfHeader.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 
     /**

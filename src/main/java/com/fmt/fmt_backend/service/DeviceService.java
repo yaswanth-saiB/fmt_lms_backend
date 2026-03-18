@@ -5,13 +5,16 @@ import com.fmt.fmt_backend.entity.DeviceEntity;
 import com.fmt.fmt_backend.entity.User;
 import com.fmt.fmt_backend.repository.DeviceRepository;
 import com.fmt.fmt_backend.repository.RefreshTokenRepository;
+import com.fmt.fmt_backend.repository.UserSessionRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -23,6 +26,7 @@ public class DeviceService {
 
     private final DeviceRepository deviceRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final UserSessionRepository userSessionRepository;
 
     @Value("${device.max-sessions-per-user:2}")
     private int maxSessionsPerUser;
@@ -30,50 +34,60 @@ public class DeviceService {
     @Value("${device.max-streaming-sessions:1}")
     private int maxStreamingSessions;
 
+    // =========================================================================
+    // FINGERPRINT
+    // =========================================================================
+
     /**
-     * Generate device fingerprint from request
+     * Generate a stable device fingerprint from the request.
+     *
+     * Uses UUID v3 (MD5-based) over "userAgent|ip" so the same browser on the
+     * same IP always maps to the same fingerprint.  StandardCharsets.UTF_8 is
+     * used explicitly to guarantee identical bytes regardless of JVM locale.
+     *
+     * Note (intentional): the fingerprint changes when the user's IP changes
+     * (VPN, mobile network switch) — this is by design and treated as a new device.
      */
     public String generateDeviceFingerprint(HttpServletRequest request) {
         String userAgent = request.getHeader("User-Agent");
-        String ip = getClientIp(request);
+        String ip        = getClientIp(request);
 
-        // Create unique fingerprint from userAgent + IP
-        String fingerprintData = (userAgent != null ? userAgent : "unknown") + "|" + ip;
-        String fingerprint = UUID.nameUUIDFromBytes(fingerprintData.getBytes()).toString();
+        String raw = (userAgent != null ? userAgent.trim() : "unknown") + "|" + ip;
 
-        log.debug("🖐️ Generated fingerprint: {} for IP: {}", fingerprint, maskIpAddress(ip));
+        // UUID.nameUUIDFromBytes uses MD5 internally (UUID v3) — deterministic
+        String fingerprint = UUID.nameUUIDFromBytes(raw.getBytes(StandardCharsets.UTF_8)).toString();
+
+        log.debug("🖐️ Fingerprint: {} for IP: {}", fingerprint, maskIpAddress(ip));
         return fingerprint;
     }
 
+    // =========================================================================
+    // REGISTER DEVICE
+    // =========================================================================
+
     /**
-     * Register a new device for a user
+     * Register or update a device for the user.
+     * After saving the new device, enforces the per-user device limit by
+     * auto-revoking the oldest excess device(s).
      */
     @Transactional
     public DeviceEntity registerDevice(User user, String deviceFingerprint, HttpServletRequest request) {
         log.info("📱 Registering device for user: {}", user.getEmail());
 
-        // Check if device already exists
-        Optional<DeviceEntity> existingDeviceOpt = deviceRepository
+        Optional<DeviceEntity> existingOpt = deviceRepository
                 .findByUserAndDeviceFingerprint(user, deviceFingerprint);
 
-        if (existingDeviceOpt.isPresent()) {
-            DeviceEntity existingDevice = existingDeviceOpt.get();
-
-            // ✅ FIX BUG 8: Reactivate if inactive
-            if (!existingDevice.isActive()) {
-                log.info("🔄 Reactivating inactive device: {}", existingDevice.getId());
-                existingDevice.setActive(true);
-            }
-
-            // Update last active time
-            existingDevice.setLastActiveAt(LocalDateTime.now());
-            existingDevice.setIpAddress(getClientIp(request));
-            existingDevice.setUserAgent(request.getHeader("User-Agent"));
-            existingDevice.setActive(true);
-            return deviceRepository.save(existingDevice);
+        if (existingOpt.isPresent()) {
+            DeviceEntity existing = existingOpt.get();
+            existing.setActive(true);
+            existing.setLastActiveAt(LocalDateTime.now());
+            existing.setIpAddress(getClientIp(request));
+            existing.setUserAgent(request.getHeader("User-Agent"));
+            log.info("🔄 Existing device updated: {}", existing.getId());
+            return deviceRepository.save(existing);
         }
 
-        // Create new device
+        // New device
         DeviceEntity newDevice = new DeviceEntity();
         newDevice.setUser(user);
         newDevice.setDeviceFingerprint(deviceFingerprint);
@@ -85,179 +99,169 @@ public class DeviceService {
         newDevice.setActive(true);
         newDevice.setStreaming(false);
 
-        DeviceEntity savedDevice = deviceRepository.save(newDevice);
+        DeviceEntity saved = deviceRepository.save(newDevice);
+        log.info("✅ New device registered for {}: {}", user.getEmail(), saved.getDeviceName());
 
-        // Check if user exceeded device limit
-        checkDeviceLimit(user);
+        // Enforce limit — revoke oldest excess devices
+        enforceDeviceLimit(user, saved);
 
-        log.info("✅ New device registered for {}: {}", user.getEmail(), savedDevice.getDeviceName());
-        return savedDevice;
+        return saved;
     }
 
-    /**
-     * Get all active devices for a user
-     */
+    // =========================================================================
+    // GET DEVICES
+    // =========================================================================
+
     public List<Map<String, Object>> getUserDevices(User user, HttpServletRequest request) {
         List<DeviceEntity> devices = deviceRepository.findByUserAndIsActiveTrue(user);
 
         return devices.stream().map(device -> {
             Map<String, Object> dto = new HashMap<>();
-            dto.put("deviceId", device.getId());
-            dto.put("deviceName", device.getDeviceName());
-            dto.put("ipAddress", maskIpAddress(device.getIpAddress()));
-            dto.put("lastActive", device.getLastActiveAt());
-            dto.put("firstSeen", device.getFirstSeenAt());
-            dto.put("isStreaming", device.isStreaming());
-            dto.put("userAgent", truncateUserAgent(device.getUserAgent()));
+            dto.put("deviceId",        device.getId());
+            dto.put("deviceName",      device.getDeviceName());
+            dto.put("ipAddress",       maskIpAddress(device.getIpAddress()));
+            dto.put("lastActive",      device.getLastActiveAt());
+            dto.put("firstSeen",       device.getFirstSeenAt());
+            dto.put("isStreaming",     device.isStreaming());
+            dto.put("userAgent",       truncateUserAgent(device.getUserAgent()));
             dto.put("isCurrentDevice", isCurrentDevice(device, request));
             return dto;
         }).collect(Collectors.toList());
     }
 
+    // =========================================================================
+    // REVOKE DEVICE
+    // =========================================================================
+
     /**
-     * Revoke a specific device
+     * Revoke a specific device: marks it inactive and revokes both its
+     * refresh tokens and user sessions so the user is fully logged out
+     * on that device.
      */
     @Transactional
     public ApiResponse<String> revokeDevice(User user, UUID deviceId) {
         log.info("🔒 Revoking device {} for user: {}", deviceId, user.getEmail());
 
         Optional<DeviceEntity> deviceOpt = deviceRepository.findById(deviceId);
-
         if (deviceOpt.isEmpty()) {
             return ApiResponse.error("Device not found");
         }
 
         DeviceEntity device = deviceOpt.get();
 
-        // Verify device belongs to user
         if (!device.getUser().getId().equals(user.getId())) {
-            log.warn("❌ Unauthorized device revocation attempt");
+            log.warn("❌ Unauthorized device revocation attempt by {}", user.getEmail());
             return ApiResponse.error("Device not found");
         }
 
-        // Cannot revoke current device? (Optional - you can allow or not)
-        // You may want to prevent users from revoking their current device
-
-        // Deactivate device
         device.setActive(false);
+        device.setStreaming(false);
         deviceRepository.save(device);
 
-        // Revoke all refresh tokens for this device
+        // Revoke refresh tokens AND user sessions for this device
         refreshTokenRepository.revokeAllDeviceTokens(deviceId, LocalDateTime.now());
+        userSessionRepository.revokeDeviceSessions(deviceId, LocalDateTime.now());
 
-        log.info("✅ Device revoked: {}", deviceId);
+        log.info("✅ Device revoked (tokens + sessions cleared): {}", deviceId);
         return ApiResponse.success("Device revoked successfully");
     }
 
+    // =========================================================================
+    // DEVICE LIMIT
+    // =========================================================================
+
     /**
-     * Handle when user exceeds device limit
-     * Returns list of devices user can choose to disconnect
+     * Returns devices the user can choose to disconnect when over limit.
+     * Excludes the current device from the list.
      */
     public ApiResponse<List<Map<String, Object>>> handleDeviceLimit(User user, HttpServletRequest request) {
-        long activeDevices = deviceRepository.countByUserAndIsActiveTrue(user);
+        long activeCount = deviceRepository.countByUserAndIsActiveTrue(user);
 
-        if (activeDevices <= maxSessionsPerUser) {
+        if (activeCount <= maxSessionsPerUser) {
             return ApiResponse.success("Within device limit", null);
         }
 
-        List<DeviceEntity> allDevices = deviceRepository.findByUserAndIsActiveTrue(user);
+        List<DeviceEntity> allActive = deviceRepository.findByUserAndIsActiveTrue(user);
+        allActive.sort(Comparator.comparing(DeviceEntity::getLastActiveAt)); // oldest first
 
-        // Sort by last active (oldest first)
-        allDevices.sort((d1, d2) -> d1.getLastActiveAt().compareTo(d2.getLastActiveAt()));
+        Optional<DeviceEntity> currentOpt = getCurrentDevice(user, request);
 
-        // Exclude current device from being disconnected
-        Optional<DeviceEntity> currentDeviceOpt = getCurrentDevice(user, request);
-
-        List<Map<String, Object>> disconnectOptions = allDevices.stream()
-                .filter(d -> currentDeviceOpt.isEmpty() || !d.getId().equals(currentDeviceOpt.get().getId()))
-                .limit(activeDevices - maxSessionsPerUser + 1) // Show options to reduce to limit
+        List<Map<String, Object>> options = allActive.stream()
+                .filter(d -> currentOpt.isEmpty() || !d.getId().equals(currentOpt.get().getId()))
+                .limit(activeCount - maxSessionsPerUser + 1)
                 .map(device -> {
                     Map<String, Object> dto = new HashMap<>();
-                    dto.put("deviceId", device.getId());
+                    dto.put("deviceId",   device.getId());
                     dto.put("deviceName", device.getDeviceName());
                     dto.put("lastActive", device.getLastActiveAt());
-                    dto.put("ipAddress", maskIpAddress(device.getIpAddress()));
+                    dto.put("ipAddress",  maskIpAddress(device.getIpAddress()));
                     return dto;
                 })
                 .collect(Collectors.toList());
 
         return ApiResponse.success(
                 String.format("You have %d active devices. Maximum allowed is %d.",
-                        activeDevices, maxSessionsPerUser),
-                disconnectOptions
+                        activeCount, maxSessionsPerUser),
+                options
         );
     }
 
     /**
-     * User chooses which device to disconnect
+     * Disconnect a device the user has chosen (user-initiated).
      */
     @Transactional
     public ApiResponse<String> disconnectDevice(User user, UUID deviceId) {
-        log.info("🔌 User {} requesting to disconnect device: {}", user.getEmail(), deviceId);
+        log.info("🔌 User {} disconnecting device: {}", user.getEmail(), deviceId);
 
-        // First revoke the device
         ApiResponse<String> revokeResponse = revokeDevice(user, deviceId);
-
         if (!revokeResponse.isSuccess()) {
             return revokeResponse;
         }
 
-        // Check current active device count
-        long activeDevices = deviceRepository.countByUserAndIsActiveTrue(user);
+        long remaining = deviceRepository.countByUserAndIsActiveTrue(user);
 
-        if (activeDevices <= maxSessionsPerUser) {
+        if (remaining <= maxSessionsPerUser) {
             return ApiResponse.success(
-                    String.format("Device disconnected. You now have %d active device(s).", activeDevices)
-            );
-        } else {
-            // Still over limit - tell user they need to disconnect more
-            return ApiResponse.success(
-                    String.format(
-                            "Device disconnected. However, you still have %d active devices. Maximum allowed is %d. " +
-                                    "Please disconnect another device.",
-                            activeDevices, maxSessionsPerUser
-                    )
-            );
+                    String.format("Device disconnected. You now have %d active device(s).", remaining));
         }
+
+        return ApiResponse.success(
+                String.format("Device disconnected. You still have %d active devices (limit: %d). " +
+                        "Please disconnect another device.", remaining, maxSessionsPerUser));
     }
 
-    /**
-     * Start streaming on a device
-     */
+    // =========================================================================
+    // STREAMING
+    // =========================================================================
+
     @Transactional
     public ApiResponse<String> startStreaming(User user, UUID deviceId) {
         log.info("🎥 Starting streaming for device: {}", deviceId);
 
         Optional<DeviceEntity> deviceOpt = deviceRepository.findById(deviceId);
-
         if (deviceOpt.isEmpty()) {
             return ApiResponse.error("Device not found");
         }
 
         DeviceEntity device = deviceOpt.get();
-
-        // Check if device belongs to user
         if (!device.getUser().getId().equals(user.getId())) {
             return ApiResponse.error("Device not found");
         }
 
-        // Check streaming limit
-        long streamingCount = deviceRepository.countByUserAndIsStreamingTrue(user);
+        if (device.isStreaming()) {
+            return ApiResponse.error("This device is already streaming");
+        }
 
+        long streamingCount = deviceRepository.countByUserAndIsStreamingTrue(user);
         if (streamingCount >= maxStreamingSessions) {
-            // Find which device is streaming
-            List<DeviceEntity> streamingDevices = deviceRepository.findByUserAndIsActiveTrue(user)
-                    .stream()
+            List<String> streamingOn = deviceRepository.findByUserAndIsActiveTrue(user).stream()
                     .filter(DeviceEntity::isStreaming)
+                    .map(d -> d.getDeviceName() + " (" + maskIpAddress(d.getIpAddress()) + ")")
                     .collect(Collectors.toList());
 
-            String streamingOn = streamingDevices.stream()
-                    .map(d -> d.getDeviceName() + " (" + maskIpAddress(d.getIpAddress()) + ")")
-                    .collect(Collectors.joining(", "));
-
             return ApiResponse.error(
-                    String.format("Streaming already active on: %s. Stop streaming there first.", streamingOn)
-            );
+                    "Streaming already active on: " + String.join(", ", streamingOn) +
+                    ". Stop streaming there first.");
         }
 
         device.setStreaming(true);
@@ -267,150 +271,150 @@ public class DeviceService {
         return ApiResponse.success("Streaming started");
     }
 
-    /**
-     * Stop streaming on a device
-     */
     @Transactional
     public ApiResponse<String> stopStreaming(User user, UUID deviceId) {
-        Optional<DeviceEntity> deviceOpt = deviceRepository.findById(deviceId);
+        log.info("⏹️ Stopping streaming for device: {}", deviceId);
 
+        Optional<DeviceEntity> deviceOpt = deviceRepository.findById(deviceId);
         if (deviceOpt.isEmpty()) {
             return ApiResponse.error("Device not found");
         }
 
         DeviceEntity device = deviceOpt.get();
-
         if (!device.getUser().getId().equals(user.getId())) {
             return ApiResponse.error("Device not found");
+        }
+
+        if (!device.isStreaming()) {
+            return ApiResponse.error("This device is not currently streaming");
         }
 
         device.setStreaming(false);
         deviceRepository.save(device);
 
-        log.info("⏹️ Streaming stopped on device: {}", deviceId);
+        log.info("✅ Streaming stopped on device: {}", deviceId);
         return ApiResponse.success("Streaming stopped");
     }
 
+    // =========================================================================
+    // CLEANUP (scheduled)
+    // =========================================================================
+
     /**
-     * Clean up inactive devices
+     * Marks devices inactive and revokes their tokens/sessions if they haven't
+     * been seen in 30 days. Runs daily at 2:30 AM (offset from token cleanup
+     * at 2:00 AM). Uses a DB-level date filter instead of loading every device.
      */
+    @Scheduled(cron = "0 30 2 * * ?")
     @Transactional
     public void cleanupInactiveDevices() {
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(30); // 30 days inactivity
+        log.info("🧹 Starting cleanup of devices inactive for 30+ days");
 
-        List<DeviceEntity> allDevices = deviceRepository.findAll();
-        List<DeviceEntity> inactiveDevices = allDevices.stream()
-                .filter(d -> d.getLastActiveAt().isBefore(cutoff))
-                .collect(Collectors.toList());
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(30);
+        List<DeviceEntity> stale = deviceRepository.findByLastActiveAtBefore(cutoff);
 
-        for (DeviceEntity device : inactiveDevices) {
+        for (DeviceEntity device : stale) {
             device.setActive(false);
+            device.setStreaming(false);
             refreshTokenRepository.revokeAllDeviceTokens(device.getId(), LocalDateTime.now());
+            userSessionRepository.revokeDeviceSessions(device.getId(), LocalDateTime.now());
         }
 
-        deviceRepository.saveAll(inactiveDevices);
-        log.info("🧹 Cleaned up {} inactive devices", inactiveDevices.size());
+        deviceRepository.saveAll(stale);
+        log.info("✅ Cleaned up {} stale devices", stale.size());
     }
 
-    // ========== PRIVATE HELPER METHODS ==========
+    // =========================================================================
+    // PACKAGE-LEVEL HELPERS (used by other services)
+    // =========================================================================
 
-    /**
-     * Get current device for user based on request
-     */
     public Optional<DeviceEntity> getCurrentDevice(User user, HttpServletRequest request) {
-        String currentFingerprint = generateDeviceFingerprint(request);
-        return deviceRepository.findByUserAndDeviceFingerprint(user, currentFingerprint);
+        String fp = generateDeviceFingerprint(request);
+        return deviceRepository.findByUserAndDeviceFingerprint(user, fp);
     }
 
+    // =========================================================================
+    // PRIVATE HELPERS
+    // =========================================================================
+
     /**
-     * Check if device is the current device
+     * Enforce the per-user device limit after a new device is registered.
+     * Revokes the oldest active device(s) if the count exceeds the limit.
+     * The newly registered device is excluded from auto-revocation.
      */
+    private void enforceDeviceLimit(User user, DeviceEntity currentDevice) {
+        List<DeviceEntity> active = deviceRepository.findByUserAndIsActiveTrue(user);
+
+        if (active.size() <= maxSessionsPerUser) {
+            return;
+        }
+
+        // Sort oldest-first; skip the device we just registered
+        List<DeviceEntity> toRevoke = active.stream()
+                .filter(d -> !d.getId().equals(currentDevice.getId()))
+                .sorted(Comparator.comparing(DeviceEntity::getLastActiveAt))
+                .limit(active.size() - maxSessionsPerUser)
+                .collect(Collectors.toList());
+
+        for (DeviceEntity old : toRevoke) {
+            old.setActive(false);
+            old.setStreaming(false);
+            deviceRepository.save(old);
+            refreshTokenRepository.revokeAllDeviceTokens(old.getId(), LocalDateTime.now());
+            userSessionRepository.revokeDeviceSessions(old.getId(), LocalDateTime.now());
+            log.info("🔒 Auto-revoked oldest device {} ({}) for user {} — limit enforced",
+                    old.getId(), old.getDeviceName(), user.getEmail());
+        }
+    }
+
     private boolean isCurrentDevice(DeviceEntity device, HttpServletRequest request) {
-        String currentFingerprint = generateDeviceFingerprint(request);
-        return device.getDeviceFingerprint().equals(currentFingerprint);
+        return device.getDeviceFingerprint().equals(generateDeviceFingerprint(request));
     }
 
-    /**
-     * Get client IP address from request
-     */
     private String getClientIp(HttpServletRequest request) {
         String xfHeader = request.getHeader("X-Forwarded-For");
-        if (xfHeader != null && !xfHeader.isEmpty()) {
+        if (xfHeader != null && !xfHeader.isBlank()) {
             return xfHeader.split(",")[0].trim();
         }
         return request.getRemoteAddr();
     }
 
-    /**
-     * Generate device name from user agent
-     */
     private String generateDeviceName(HttpServletRequest request) {
-        String userAgent = request.getHeader("User-Agent");
+        String ua = request.getHeader("User-Agent");
+        if (ua == null) return "Unknown Device";
 
-        if (userAgent == null) return "Unknown Device";
+        String browser;
+        if      (ua.contains("Edg"))                                  browser = "Edge";
+        else if (ua.contains("OPR") || ua.contains("Opera"))         browser = "Opera";
+        else if (ua.contains("Chrome"))                               browser = "Chrome";
+        else if (ua.contains("Firefox"))                              browser = "Firefox";
+        else if (ua.contains("Safari"))                               browser = "Safari";
+        else                                                          browser = "Unknown Browser";
 
-        // Detect browser first
-        String browser = "Unknown Browser";
-        if (userAgent.contains("Chrome") && !userAgent.contains("Edg")) {
-            browser = "Chrome";
-        } else if (userAgent.contains("Edg")) {
-            browser = "Edge";
-        } else if (userAgent.contains("Firefox")) {
-            browser = "Firefox";
-        } else if (userAgent.contains("Safari") && !userAgent.contains("Chrome")) {
-            browser = "Safari";
-        } else if (userAgent.contains("Opera") || userAgent.contains("OPR")) {
-            browser = "Opera";
-        }
-
-        // Detect OS
-        String os = "Unknown OS";
-        if (userAgent.contains("Windows NT 10.0")) {
-            os = "Windows 10";
-        } else if (userAgent.contains("Windows NT 11.0")) {
-            os = "Windows 11";
-        } else if (userAgent.contains("Mac OS X")) {
-            os = "macOS";
-        } else if (userAgent.contains("Linux")) {
-            os = "Linux";
-        } else if (userAgent.contains("Android")) {
-            os = "Android";
-        } else if (userAgent.contains("iPhone") || userAgent.contains("iPad")) {
-            os = "iOS";
-        }
+        String os;
+        if      (ua.contains("Android"))                              os = "Android";
+        else if (ua.contains("iPhone") || ua.contains("iPad"))       os = "iOS";
+        else if (ua.contains("Windows NT 11.0"))                     os = "Windows 11";
+        else if (ua.contains("Windows NT 10.0"))                     os = "Windows 10";
+        else if (ua.contains("Windows"))                             os = "Windows";
+        else if (ua.contains("Mac OS X"))                            os = "macOS";
+        else if (ua.contains("Linux"))                               os = "Linux";
+        else                                                         os = "Unknown OS";
 
         return browser + " on " + os;
     }
 
-    /**
-     * Mask IP address for logging
-     */
     private String maskIpAddress(String ip) {
         if (ip == null) return "unknown";
         String[] parts = ip.split("\\.");
         if (parts.length == 4) {
             return parts[0] + "." + parts[1] + "." + parts[2] + ".***";
         }
-        return "***.***.***.***";
+        return ip; // IPv6 or unexpected format — return as-is
     }
 
-    /**
-     * Truncate user agent for display
-     */
     private String truncateUserAgent(String ua) {
         if (ua == null) return "";
-        if (ua.length() <= 50) return ua;
-        return ua.substring(0, 47) + "...";
-    }
-
-    /**
-     * Check if user exceeds device limit
-     */
-    private void checkDeviceLimit(User user) {
-        long activeDevices = deviceRepository.countByUserAndIsActiveTrue(user);
-        if (activeDevices > maxSessionsPerUser) {
-            log.warn("⚠️ User {} has {} devices (limit: {})",
-                    user.getEmail(), activeDevices, maxSessionsPerUser);
-        }
+        return ua.length() <= 80 ? ua : ua.substring(0, 77) + "...";
     }
 }
