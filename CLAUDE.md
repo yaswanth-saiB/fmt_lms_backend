@@ -8,7 +8,13 @@ Spring Boot backend for **First Million Trade** — an online learning platform 
 - Friend 1 (frontend — React, deployed on Vercel)
 - Friend 2 (mentor whose courses we are building the platform for)
 
-**Deployment:** Backend on AWS (free tier), Frontend on Vercel, DB on AWS RDS / Railway PostgreSQL.
+**Deployment:**
+- Backend: AWS EC2 (Ubuntu, free tier) — `api.firstmilliontrade.com`
+- Frontend: Vercel — `https://firstmilliontrade.com` (home) + `https://app.firstmilliontrade.com` (login/signup)
+- DB: PostgreSQL on same EC2 instance (local, not RDS — plan to migrate to RDS later)
+- Domain: Hostinger → DNS pointed to EC2 Elastic IP
+- SSL: Let's Encrypt via Certbot (auto-renews)
+- Process manager: systemd (`fmt-backend.service`) — NOT nohup
 
 ---
 
@@ -16,10 +22,11 @@ Spring Boot backend for **First Million Trade** — an online learning platform 
 - **Java 17**, Spring Boot 3.x
 - **PostgreSQL** (via JPA/Hibernate, `ddl-auto: update`)
 - **JWT** (jjwt library)
-- **SendGrid** — transactional email
+- **SendGrid** — transactional email (OTP, welcome, promo, support, admin)
 - **Twilio** — SMS OTP
 - **Swagger / SpringDoc** — API docs at `/swagger-ui.html`
 - **Lombok** — boilerplate reduction
+- **Nginx** — reverse proxy (port 443/80 → 8080)
 
 ---
 
@@ -36,7 +43,7 @@ After login the server sets **two HttpOnly cookies**:
 - The browser stores cookies automatically and sends them on every request.
 - **No tokens in response body** after login — only user info.
 - CSRF protection: `SameSite=Strict` on both cookies.
-- Production: set env var `COOKIE_SECURE=true` so cookies are HTTPS-only.
+- Production: `COOKIE_SECURE=true`, `COOKIE_DOMAIN=.firstmilliontrade.com`
 
 ### JWT Claims
 Every access token contains:
@@ -82,7 +89,7 @@ POST /api/auth/login              { email, password }
     → returns { requiresOtp: true }
 
 POST /api/auth/login/verify-otp  { email, otp }
-    → validates OTP
+    → validates OTP (email OR mobile OTP accepted)
     → Sets cookies: access_token, refresh_token
     → Returns: { userId, email, firstName, lastName, role, sessionId, expiresIn }
 ```
@@ -99,6 +106,7 @@ POST /api/auth/signup/verify-mobile-otp  ← sets cookies on success
 ```
 POST /api/auth/signup/simple   — FOR TESTING ONLY — sets cookies
 ```
+> ⚠️ Must be disabled before go-live. Gate with env var `SIMPLE_SIGNUP_ENABLED=false`.
 
 ---
 
@@ -106,30 +114,130 @@ POST /api/auth/signup/simple   — FOR TESTING ONLY — sets cookies
 | Entity | Table | Notes |
 |--------|-------|-------|
 | `User` | `users` | UUID PK, roles: STUDENT/MENTOR/ADMIN |
-| `DeviceEntity` | `devices` | One per browser/device. Fingerprint = hash(UA+IP) |
+| `DeviceEntity` | `devices` | One per browser/device. Fingerprint = UUID_v3(MD5(UA+IP), UTF-8) |
 | `UserSession` | `user_sessions` | Created at login. `sessionId` embedded in JWT |
-| `RefreshTokenEntity` | `refresh_tokens` | Linked to device + session |
+| `RefreshTokenEntity` | `refresh_tokens` | Linked to device + session. Has `sessionId` column |
 | `OtpEntity` | `otps` | Email/mobile OTP records |
 | `Enquiry` | `enquiries` | Public enquiry form submissions |
+
+---
+
+## Device Management
+- Fingerprint: `UUID.nameUUIDFromBytes(raw.getBytes(StandardCharsets.UTF_8))` where raw = `trim(UserAgent) + "|" + clientIP`
+- Fingerprint changes intentionally on IP change (VPN switch, mobile network) = new device
+- Max 2 active devices per user — enforced automatically on new login (oldest device auto-revoked)
+- Max 1 streaming session at a time per user
+- `revokeDevice()` revokes both `refresh_tokens` AND `user_sessions` for that device
+- `cleanupInactiveDevices()` runs at 2:30 AM daily via `@Scheduled` — marks devices inactive if not seen in 30 days
+- `@EnableScheduling` is on `SecurityConfig`
+
+---
+
+## Token Endpoints
+| Endpoint | Auth | Notes |
+|----------|------|-------|
+| `POST /api/auth/token/refresh` | Public | Must be public — access_token may be expired |
+| `POST /api/auth/token/rotate`  | Public | Must be public — access_token may be expired |
+| `GET  /api/auth/token/validate`| Yes    | Debug — inspect JWT claims |
+| `POST /api/auth/token/revoke-all` | Yes | Logout all devices — revokes all DB tokens + sessions |
+
+> `revoke-all` extracts `userId` from JWT via `jwtService.extractUserId(token)`, loads User, calls
+> `tokenService.revokeAllUserTokens(user)` then clears cookies.
+
+---
+
+## Scheduled Jobs
+| Job | Schedule | What it does |
+|-----|----------|--------------|
+| `TokenService.cleanupExpiredTokens()` | 2:00 AM daily | Deletes expired/revoked refresh tokens + inactive sessions |
+| `DeviceService.cleanupInactiveDevices()` | 2:30 AM daily | Marks devices inactive + revokes tokens/sessions if not seen in 30 days |
+
+> `@EnableScheduling` must be present (it's on `SecurityConfig`). The `scheduling.enabled: true` in
+> application.yaml is a custom property and does NOT enable scheduling by itself.
+
+---
+
+## Email (SendGrid)
+All transactional email goes via SendGrid API (not SMTP). The 5 Hostinger mailboxes are SMTP
+configs used as sender identities — all actual delivery is via SendGrid.
+
+| EmailType | Sender | BCC Archive | Used For |
+|-----------|--------|-------------|----------|
+| OTP | noreply-otp@firstmilliontrade.com | No | Login + signup OTPs |
+| WELCOME | noreply-info@firstmilliontrade.com | Yes | After successful registration |
+| PROMO | noreply-info@firstmilliontrade.com | Yes | Marketing |
+| SUPPORT | help@firstmilliontrade.com | No | Support replies |
+| ADMIN | admin@firstmilliontrade.com | Yes | Internal notifications |
+| ENQUIRY | admin@firstmilliontrade.com | No | Enquiry form → admin |
+
+> All email methods are `@Async` — they do not block the request thread.
+
+---
+
+## Security Config Key Rules
+```
+Public (no token):
+  OPTIONS /**                         — preflight
+  /api/auth/login
+  /api/auth/login/verify-otp
+  /api/auth/signup/**
+  /api/auth/token/refresh             ← must be public (access_token may be expired)
+  /api/auth/token/rotate              ← must be public
+  /api/auth/forgot-password
+  /api/auth/reset-password
+  /api/enquiry/submit
+  /swagger-ui/**, /v3/api-docs/**
+  /actuator/**
+  /api/test/**, /api/public/**
+
+Protected (require valid access_token):
+  /api/auth/logout
+  /api/auth/me
+  /api/auth/change-password
+  /api/auth/token/**                  (validate + revoke-all)
+  /api/devices/**
+  /api/user/**
+  /api/admin/**   → ADMIN role only
+  /api/mentor/**  → MENTOR role only
+  /api/student/** → STUDENT role only
+```
+
+---
+
+## CORS Allowed Origins
+```
+http://localhost:3000               — dev (CRA)
+http://localhost:5173               — dev (Vite)
+https://firstmilliontrade.com       — production home
+https://www.firstmilliontrade.com   — production home (www)
+https://app.firstmilliontrade.com   — production login/signup app
+https://www.app.firstmilliontrade.com
+https://api.firstmilliontrade.com   — self-reference
+```
+> `PATCH` is NOT in allowed methods. Add it to SecurityConfig if ever needed.
 
 ---
 
 ## Environment Variables (required)
 ```
 # Database
-DATABASE_URL, DATABASE_USERNAME, DATABASE_PASSWORD
+DATABASE_URL                        (jdbc:postgresql://localhost:5432/fmt in prod)
+DATABASE_USERNAME                   (fmtuser in prod)
+DATABASE_PASSWORD
 
 # JWT
-JWT_SECRET                          (Base64-encoded, min 256-bit)
+JWT_SECRET                          (Base64-encoded — generate: openssl rand -base64 32)
 JWT_ACCESS_TOKEN_EXPIRATION         (ms, default 21600000 = 6h)
 JWT_REFRESH_TOKEN_EXPIRATION        (ms, default 1209600000 = 14d)
 
-# Email (5 mailboxes — each has HOST, PORT, USERNAME, PASSWORD, FROM)
-OTP_EMAIL_HOST, OTP_EMAIL_PORT, OTP_EMAIL_USERNAME, OTP_EMAIL_PASSWORD, OTP_EMAIL_FROM
-INFO_EMAIL_HOST, INFO_EMAIL_PORT, INFO_EMAIL_USERNAME, INFO_EMAIL_PASSWORD, INFO_EMAIL_FROM
-HELP_EMAIL_HOST, HELP_EMAIL_PORT, HELP_EMAIL_USERNAME, HELP_EMAIL_PASSWORD, HELP_EMAIL_FROM
-ARCHIVE_EMAIL_HOST, ARCHIVE_EMAIL_PORT, ARCHIVE_EMAIL_USERNAME, ARCHIVE_EMAIL_PASSWORD, ARCHIVE_EMAIL_FROM
-ADMIN_EMAIL_HOST, ADMIN_EMAIL_PORT, ADMIN_EMAIL_USERNAME, ADMIN_EMAIL_PASSWORD, ADMIN_EMAIL_FROM
+# Cookie
+COOKIE_SECURE                       (true in production, false in dev)
+COOKIE_DOMAIN                       (blank for localhost, .firstmilliontrade.com in prod)
+
+# App
+APP_BASE_URL                        (https://api.firstmilliontrade.com in prod)
+APP_FRONTEND_URL                    (https://firstmilliontrade.com in prod)
+APP_ENVIRONMENT                     (development | production)
 
 # SendGrid
 SENDGRID_API_KEY
@@ -139,46 +247,166 @@ SENDGRID_ARCHIVE_ENABLED            (default true)
 # Twilio
 TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
 
-# App
-APP_BASE_URL                        (default https://api.firstmilliontrade.com)
-APP_FRONTEND_URL                    (default http://localhost:3000)
-APP_ENVIRONMENT                     (development | production)
-
-# Cookie
-COOKIE_SECURE                       (true in production, false in dev)
-COOKIE_DOMAIN                       (blank for localhost, .firstmilliontrade.com in prod)
-
-# Port
-PORT                                (injected by Railway/AWS, default 8080)
+# Email — 5 Hostinger mailboxes (each: HOST, PORT=465, USERNAME, PASSWORD, FROM)
+OTP_EMAIL_*     → noreply-otp@firstmilliontrade.com
+INFO_EMAIL_*    → noreply-info@firstmilliontrade.com
+HELP_EMAIL_*    → help@firstmilliontrade.com
+ARCHIVE_EMAIL_* → archive@firstmilliontrade.com
+ADMIN_EMAIL_*   → admin@firstmilliontrade.com
 ```
+> Local .env file is at project root. **Never commit it.**
+> Production .env is at `/home/ubuntu/.env` on EC2 (chmod 600).
 
 ---
 
 ## Build & Run
 ```bash
-./mvnw spring-boot:run          # local dev
-./mvnw clean package -DskipTests
-java -jar target/fmt-backend-*.jar
+./mvnw spring-boot:run              # local dev
+./mvnw clean package -DskipTests   # build JAR
+java -jar target/fmt-backend-*.jar  # run JAR directly
 ```
 Swagger UI: http://localhost:8080/swagger-ui.html
 
 ---
 
-## Swagger Testing Guide (see testing plan below)
-The Swagger UI is at `/swagger-ui.html`. For protected endpoints:
-1. Call `POST /api/auth/signup/simple` or `POST /api/auth/login/verify-otp`
-2. Copy the `accessToken` from browser DevTools → Cookies OR... the filter also accepts `Authorization: Bearer <token>`.
-3. Click **Authorize** in Swagger → paste the token → test protected endpoints.
+## Production Deployment (EC2)
+
+### Server Details
+- EC2 Ubuntu, Elastic IP assigned (domain won't break on restart)
+- Java 17, PostgreSQL 16, Nginx installed
+- App runs as systemd service: `sudo systemctl status fmt-backend`
+
+### Nginx Config (`/etc/nginx/sites-enabled/default`)
+```nginx
+# HTTP → HTTPS redirect
+server {
+    listen 80;
+    server_name api.firstmilliontrade.com;
+    return 301 https://$host$request_uri;
+}
+
+# HTTPS + proxy to Spring Boot
+server {
+    listen 443 ssl;
+    server_name api.firstmilliontrade.com;
+
+    ssl_certificate     /etc/letsencrypt/live/api.firstmilliontrade.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.firstmilliontrade.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    location / {
+        proxy_pass         http://localhost:8080;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;   # required for cookie Secure flag
+    }
+}
+```
+> `X-Forwarded-Proto` is critical — without it device fingerprinting breaks (all users get same IP).
+
+### systemd Service (`/etc/systemd/system/fmt-backend.service`)
+```ini
+[Unit]
+Description=FMT Backend
+After=network.target postgresql.service
+
+[Service]
+User=ubuntu
+EnvironmentFile=/home/ubuntu/.env
+ExecStart=/usr/bin/java -Xms256m -Xmx512m -jar /home/ubuntu/fmt-backend.jar
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Deploy Commands (run from local machine)
+```bash
+# 1. Build
+./mvnw clean package -DskipTests
+
+# 2. Copy JAR
+scp -i fmt-backend-key.pem \
+    target/fmt-backend-0.0.1-SNAPSHOT.jar \
+    ubuntu@<EC2-IP>:/home/ubuntu/fmt-backend.jar
+
+# 3. Restart
+ssh -i fmt-backend-key.pem ubuntu@<EC2-IP> \
+    "sudo systemctl restart fmt-backend"
+
+# 4. Watch logs
+ssh -i fmt-backend-key.pem ubuntu@<EC2-IP> \
+    "sudo journalctl -u fmt-backend -f"
+```
+
+### Useful EC2 Commands
+```bash
+sudo systemctl status fmt-backend      # check status
+sudo systemctl restart fmt-backend     # restart
+sudo journalctl -u fmt-backend -f      # live logs
+sudo journalctl -u fmt-backend -n 100  # last 100 lines
+sudo nginx -t                          # test nginx config
+sudo systemctl reload nginx            # reload nginx
+```
+
+### PostgreSQL (local on EC2)
+```
+DB name:   fmt
+DB user:   fmtuser
+Host:      localhost:5432
+```
+Connect: `psql -U fmtuser -d fmt -h localhost`
+
+If tables are missing/corrupt (fresh deploy): connect as postgres superuser and run:
+```sql
+DROP SCHEMA public CASCADE;
+CREATE SCHEMA public;
+GRANT ALL ON SCHEMA public TO fmtuser;
+GRANT CREATE ON SCHEMA public TO fmtuser;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO fmtuser;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO fmtuser;
+```
+Then restart the app — Hibernate recreates all tables via `ddl-auto: update`.
+
+---
+
+## Swagger Testing Guide
+The Swagger UI is at `/swagger-ui.html`.
+1. Call `POST /api/auth/signup/simple` — sets cookies
+2. Call `GET /api/auth/token/validate` — copy `accessToken` value
+3. Click **Authorize** in Swagger → paste as `Bearer <token>`
+4. Test protected endpoints
+
+---
+
+## Known Issues / Pre-Production TODO
+- [ ] Disable `/api/auth/signup/simple` before go-live (gate with `SIMPLE_SIGNUP_ENABLED` env var)
+- [ ] Change `ddl-auto: update` → `validate` before go-live (or add Flyway)
+- [ ] Set `show-sql: false` in production application.yaml
+- [ ] Fix logging package: `com.tradingapp` → `com.fmt.fmt_backend` in application.yaml
+- [ ] Move DB from EC2 local → AWS RDS (currently on same EC2 instance — no automated backups)
+- [ ] Add `PATCH` to CORS allowed methods if any future endpoint needs it
 
 ---
 
 ## Decisions & Constraints
-- `ddl-auto: update` — Hibernate manages schema. Fine for early dev; switch to Flyway before go-live.
-- Device fingerprint = `MD5(userAgent + IP)` — changes on VPN/IP change (intentional).
-- OTP sent to BOTH email and mobile on login; user can use either one.
-- Max 2 active sessions per user (`device.max-sessions-per-user=2`).
-- Max 1 streaming session at a time (`device.max-streaming-sessions=1`).
-- Cookie headers must be set via `ResponseEntity.headers()` (not `HttpServletResponse.addHeader()`).
-  Spring MVC 6.x / Spring Security's response wrapper chain swallows raw `addHeader` calls
-  before the response is committed. Use `CookieService.buildAuthCookieHeaders()` and attach
-  to `ResponseEntity`.
+- UUID primary keys on all entities — prevents enumeration attacks, safe for distributed use
+- Device fingerprint changes on IP change (VPN/mobile network switch) — intentional, treated as new device
+- OTP sent to BOTH email and mobile on login; user can use either one
+- `revokeDevice()` must call both `refreshTokenRepository` AND `userSessionRepository` — calling only one leaves stale records
+- `/api/auth/token/refresh` and `/api/auth/token/rotate` must be `permitAll` in SecurityConfig — access_token may be expired when these are called
+- Cookie headers must be set via `ResponseEntity.headers()` (not `HttpServletResponse.addHeader()`) — Spring MVC 6.x swallows raw addHeader calls
+- Frontend must use `credentials: 'include'` (fetch) or `withCredentials: true` (axios) — without this no cookies are sent and every request gets 401
+
+---
+
+## Documents Generated (in project root)
+- `JWT_Token_Flow.docx` — JWT, access/refresh token, signup/login/logout explained
+- `Device_Management.docx` — device fingerprinting, limits, streaming, API reference
+- `API_Reference_Frontend.docx` — all endpoints with payloads and responses
+- `FMT_Frontend_Integration_Guide.docx` — complete frontend integration guide (share this with frontend team)
