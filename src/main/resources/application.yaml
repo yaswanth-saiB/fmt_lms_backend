@@ -218,6 +218,14 @@ springdoc:
     - /api/**  # ✅ Only include API paths
 
 # ============================================
+# ZOOM CONFIGURATION (Server-to-Server OAuth)
+# ============================================
+zoom:
+  account-id: ${ZOOM_ACCOUNT_ID}
+  client-id: ${ZOOM_CLIENT_ID}
+  client-secret: ${ZOOM_CLIENT_SECRET}
+
+# ============================================
 # LOGGING
 # ============================================
 logging:

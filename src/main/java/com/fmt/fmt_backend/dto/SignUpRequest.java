@@ -12,7 +12,7 @@ public class SignUpRequest {
     private String firstName;
 
     @NotBlank(message = "Last name is required")
-    @Size(min = 2, max = 100)
+    @Size(min = 1, max = 100)
     private String lastName;
 
     @NotBlank(message = "Email is required")

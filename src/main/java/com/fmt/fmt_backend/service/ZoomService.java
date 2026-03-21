@@ -1,0 +1,161 @@
+package com.fmt.fmt_backend.service;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.*;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
+import java.time.Instant;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Handles all Zoom Server-to-Server OAuth API calls.
+ *
+ * Token lifecycle: Zoom access tokens expire in 1 hour.
+ * We cache it and refresh 5 minutes before expiry.
+ */
+@Service
+@Slf4j
+public class ZoomService {
+
+    @Value("${zoom.account-id}")
+    private String accountId;
+
+    @Value("${zoom.client-id}")
+    private String clientId;
+
+    @Value("${zoom.client-secret}")
+    private String clientSecret;
+
+    private static final String ZOOM_TOKEN_URL = "https://zoom.us/oauth/token";
+    private static final String ZOOM_API_BASE  = "https://api.zoom.us/v2";
+
+    // Simple in-memory token cache
+    private String cachedAccessToken;
+    private Instant tokenExpiresAt = Instant.EPOCH;
+
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    // ---------------------------------------------------------------
+    // Token Management
+    // ---------------------------------------------------------------
+
+    /**
+     * Returns a valid Zoom access token.
+     * Refreshes automatically if expired or about to expire.
+     */
+    public synchronized String getAccessToken() {
+        if (cachedAccessToken == null || Instant.now().isAfter(tokenExpiresAt.minusSeconds(300))) {
+            refreshToken();
+        }
+        return cachedAccessToken;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void refreshToken() {
+        log.info("Refreshing Zoom access token");
+
+        String credentials = Base64.getEncoder()
+                .encodeToString((clientId + ":" + clientSecret).getBytes());
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Authorization", "Basic " + credentials);
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+
+        String url = ZOOM_TOKEN_URL + "?grant_type=account_credentials&account_id=" + accountId;
+
+        ResponseEntity<Map> response = restTemplate.exchange(
+                url, HttpMethod.POST, new HttpEntity<>(headers), Map.class);
+
+        if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+            Map<String, Object> body = response.getBody();
+            cachedAccessToken = (String) body.get("access_token");
+            int expiresIn = (int) body.getOrDefault("expires_in", 3600);
+            tokenExpiresAt = Instant.now().plusSeconds(expiresIn);
+            log.info("Zoom token refreshed, expires in {}s", expiresIn);
+        } else {
+            throw new RuntimeException("Failed to obtain Zoom access token");
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Meeting Management
+    // ---------------------------------------------------------------
+
+    /**
+     * Creates a Zoom meeting and returns id, start_url, join_url.
+     *
+     * @param topic     Meeting topic/title
+     * @param duration  Duration in minutes
+     * @return Map with keys: id, start_url, join_url
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, String> createMeeting(String topic, int duration) {
+        log.info("Creating Zoom meeting: topic='{}', duration={}min", topic, duration);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(getAccessToken());
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("topic", topic);
+        body.put("type", 1);           // Instant meeting (no fixed time)
+        body.put("duration", duration);
+
+        Map<String, Object> settings = new HashMap<>();
+        settings.put("auto_recording", "cloud");
+        settings.put("waiting_room", false);
+        settings.put("join_before_host", false);
+        body.put("settings", settings);
+
+        ResponseEntity<Map> response = restTemplate.exchange(
+                ZOOM_API_BASE + "/users/me/meetings",
+                HttpMethod.POST,
+                new HttpEntity<>(body, headers),
+                Map.class);
+
+        if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+            throw new RuntimeException("Failed to create Zoom meeting");
+        }
+
+        Map<String, Object> result = response.getBody();
+        Map<String, String> meeting = new HashMap<>();
+        meeting.put("id", String.valueOf(result.get("id")));
+        meeting.put("start_url", (String) result.get("start_url"));
+        meeting.put("join_url", (String) result.get("join_url"));
+
+        log.info("Zoom meeting created: id={}", meeting.get("id"));
+        return meeting;
+    }
+
+    /**
+     * Gets the current status of a Zoom meeting.
+     *
+     * @param zoomMeetingId The Zoom meeting ID
+     * @return "waiting", "started", or "ended"
+     */
+    @SuppressWarnings("unchecked")
+    public String getMeetingStatus(String zoomMeetingId) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(getAccessToken());
+
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    ZOOM_API_BASE + "/meetings/" + zoomMeetingId,
+                    HttpMethod.GET,
+                    new HttpEntity<>(headers),
+                    Map.class);
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                Object statusObj = response.getBody().get("status");
+                return statusObj != null ? statusObj.toString() : "unknown";
+            }
+        } catch (Exception e) {
+            log.warn("Could not fetch Zoom meeting status for {}: {}", zoomMeetingId, e.getMessage());
+        }
+        return "unknown";
+    }
+}

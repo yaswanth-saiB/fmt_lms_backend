@@ -1,12 +1,14 @@
 package com.fmt.fmt_backend.repository;
 
 import com.fmt.fmt_backend.entity.User;
+import com.fmt.fmt_backend.enums.UserRole;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,6 +36,13 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Modifying
     @Query("UPDATE User u SET u.accountLockedUntil = :lockUntil WHERE u.email = :email")
     void lockAccount(@Param("email") String email, @Param("lockUntil") LocalDateTime lockUntil);
+
+    // Search students by name or email (case-insensitive, partial match)
+    @Query("SELECT u FROM User u WHERE u.userRole = :role AND " +
+           "(LOWER(u.email) LIKE LOWER(CONCAT('%', :q, '%')) OR " +
+           "LOWER(u.firstName) LIKE LOWER(CONCAT('%', :q, '%')) OR " +
+           "LOWER(u.lastName) LIKE LOWER(CONCAT('%', :q, '%')))")
+    List<User> searchByRoleAndQuery(@Param("role") UserRole role, @Param("q") String q);
 }
 
 // SPRING DATA JPA MAGIC:
