@@ -37,4 +37,8 @@ public interface OtpRepository extends JpaRepository<OtpEntity, UUID> {
 
     @Query("SELECT COUNT(o) FROM OtpEntity o WHERE o.ipAddress = :ip AND o.createdAt > :since")
     long countByIpAddressAndCreatedAtAfter(@Param("ip") String ip, @Param("since") LocalDateTime since);
+
+    @Modifying
+    @Query("DELETE FROM OtpEntity o WHERE o.userId = :userId")
+    void deleteByUserId(@Param("userId") UUID userId);
 }

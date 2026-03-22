@@ -34,4 +34,8 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshTokenEntity
     void deleteExpiredAndRevoked(@Param("now") LocalDateTime now);
 
     long countByUserAndRevokedFalse(User user);
+
+    @Modifying
+    @Query("DELETE FROM RefreshTokenEntity r WHERE r.user = :user")
+    void deleteByUser(@Param("user") User user);
 }

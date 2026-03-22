@@ -226,6 +226,16 @@ zoom:
   client-secret: ${ZOOM_CLIENT_SECRET}
 
 # ============================================
+# ADMIN SEED (first-time bootstrap)
+# ============================================
+seed:
+  admin:
+    email: ${ADMIN_SEED_EMAIL:admin@firstmilliontrade.com}
+    password: ${ADMIN_SEED_PASSWORD:Admin@1234}
+    first-name: ${ADMIN_SEED_FIRST_NAME:Admin}
+    last-name: ${ADMIN_SEED_LAST_NAME:FMT}
+
+# ============================================
 # LOGGING
 # ============================================
 logging:

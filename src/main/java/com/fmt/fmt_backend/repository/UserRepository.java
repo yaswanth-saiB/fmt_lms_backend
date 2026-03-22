@@ -43,6 +43,19 @@ public interface UserRepository extends JpaRepository<User, UUID> {
            "LOWER(u.firstName) LIKE LOWER(CONCAT('%', :q, '%')) OR " +
            "LOWER(u.lastName) LIKE LOWER(CONCAT('%', :q, '%')))")
     List<User> searchByRoleAndQuery(@Param("role") UserRole role, @Param("q") String q);
+
+    // Admin — list all users sorted by registration date
+    List<User> findAllByOrderByCreatedAtDesc();
+
+    // Admin — list users filtered by role
+    List<User> findAllByUserRoleOrderByCreatedAtDesc(UserRole role);
+
+    // Admin — count by role
+    long countByUserRole(UserRole role);
+
+    // Admin — recent registrations
+    @Query("SELECT u FROM User u ORDER BY u.createdAt DESC")
+    List<User> findRecentUsers(org.springframework.data.domain.Pageable pageable);
 }
 
 // SPRING DATA JPA MAGIC:

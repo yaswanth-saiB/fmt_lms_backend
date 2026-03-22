@@ -245,19 +245,26 @@ public class AuthService {
             // Reset failed attempts
             userRepository.resetFailedAttempts(email);
 
-            // Generate and send OTPs to both channels
+            // Always send email OTP
             String emailOtp = otpService.generateOtp(email, OtpEntity.OtpType.LOGIN);
-            String mobileOtp = otpService.generateOtp(user.getPhoneNumber(), OtpEntity.OtpType.LOGIN);
-
-            // Send OTPs asynchronously
             emailService.sendOtpEmail(email, emailOtp, 5);
-            smsService.sendOtpSms(user.getPhoneNumber(), mobileOtp);
 
-            log.info("✅ Login OTPs sent to {} (email) and {} (mobile)",
-                    email, maskPhoneNumber(user.getPhoneNumber()));
+            // Send mobile OTP only if phone number is set
+            boolean hasMobile = user.getPhoneNumber() != null && !user.getPhoneNumber().isBlank();
+            if (hasMobile) {
+                String mobileOtp = otpService.generateOtp(user.getPhoneNumber(), OtpEntity.OtpType.LOGIN);
+                smsService.sendOtpSms(user.getPhoneNumber(), mobileOtp);
+            }
+
+            log.info("✅ Login OTP sent to {} (email){}", email,
+                    hasMobile ? " and " + maskPhoneNumber(user.getPhoneNumber()) + " (mobile)" : "");
+
+            String otpMessage = hasMobile
+                    ? "OTP sent to your email and mobile. Enter any one to login."
+                    : "OTP sent to your email. Enter it to login.";
 
             return ApiResponse.success(
-                    "OTP sent to your email and mobile. Enter any one to login.",
+                    otpMessage,
                     Map.of(
                             "email", email,
                             "requiresOtp", true,
@@ -368,6 +375,27 @@ public class AuthService {
         }
 
         return Optional.empty();
+    }
+
+    // ========== CHANGE PASSWORD ==========
+
+    public void changePassword(String currentPassword, String newPassword) {
+        User user = getCurrentUser()
+                .orElseThrow(() -> new RuntimeException("Not authenticated"));
+
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new RuntimeException("Current password is incorrect");
+        }
+
+        if (passwordEncoder.matches(newPassword, user.getPassword())) {
+            throw new RuntimeException("New password must be different from current password");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setLastPasswordChangeAt(LocalDateTime.now());
+        user.setFailedLoginAttempts(0);
+        userRepository.save(user);
+        log.info("Password changed for user: {}", user.getEmail());
     }
 
     // ========== HELPER METHODS ==========

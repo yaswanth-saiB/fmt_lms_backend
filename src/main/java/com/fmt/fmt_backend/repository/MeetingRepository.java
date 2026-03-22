@@ -31,4 +31,8 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
     @Query("SELECT COUNT(m) FROM Meeting m WHERE m.batch.course.mentor.id = :mentorId")
     long countByMentorId(@Param("mentorId") UUID mentorId);
+
+    // Admin — all upcoming classes across all batches
+    @Query("SELECT m FROM Meeting m WHERE m.status = 'UPCOMING' ORDER BY m.scheduledAt ASC")
+    List<Meeting> findAllUpcoming(org.springframework.data.domain.Pageable pageable);
 }

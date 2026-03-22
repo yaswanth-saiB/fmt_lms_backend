@@ -29,4 +29,8 @@ public interface DeviceRepository extends JpaRepository<DeviceEntity, UUID> {
 
     @Query("SELECT d FROM DeviceEntity d WHERE d.lastActiveAt < :cutoff")
     List<DeviceEntity> findByLastActiveAtBefore(@Param("cutoff") LocalDateTime cutoff);
+
+    @Modifying
+    @Query("DELETE FROM DeviceEntity d WHERE d.user = :user")
+    void deleteByUser(@Param("user") User user);
 }

@@ -199,6 +199,22 @@ public class AuthController {
     }
 
     // =====================================================================
+    // CHANGE PASSWORD (all roles)
+    // =====================================================================
+
+    @PutMapping("/change-password")
+    @Operation(summary = "Change own password (requires current password)",
+            description = "Available to all authenticated users — STUDENT, MENTOR, ADMIN")
+    public ResponseEntity<ApiResponse<Void>> changePassword(
+            @Valid @RequestBody ChangePasswordRequest changePasswordRequest) {
+        authService.changePassword(
+                changePasswordRequest.getCurrentPassword(),
+                changePasswordRequest.getNewPassword()
+        );
+        return ResponseEntity.ok(ApiResponse.success("Password changed successfully", null));
+    }
+
+    // =====================================================================
     // SIMPLE SIGNUP (Testing Only)
     // =====================================================================
 

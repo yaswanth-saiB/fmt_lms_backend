@@ -127,6 +127,11 @@ public class MeetingService {
     // Internal helpers
     // ---------------------------------------------------------------
 
+    /** Admin response — same as mentor (includes start_url + zoomMeetingId) */
+    public MeetingResponse toAdminResponse(Meeting m) {
+        return toMentorResponse(m);
+    }
+
     /** Mentor response — includes start_url */
     private MeetingResponse toMentorResponse(Meeting m) {
         return MeetingResponse.builder()

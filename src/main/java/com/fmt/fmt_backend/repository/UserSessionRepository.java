@@ -40,4 +40,8 @@ public interface UserSessionRepository extends JpaRepository<UserSession, UUID> 
     @Modifying
     @Query("DELETE FROM UserSession s WHERE s.expiresAt < :now AND s.active = false")
     void deleteExpiredInactive(@Param("now") LocalDateTime now);
+
+    @Modifying
+    @Query("DELETE FROM UserSession s WHERE s.user = :user")
+    void deleteByUser(@Param("user") User user);
 }

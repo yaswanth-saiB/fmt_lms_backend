@@ -4,6 +4,7 @@ import com.fmt.fmt_backend.entity.Batch;
 import com.fmt.fmt_backend.entity.BatchEnrollment;
 import com.fmt.fmt_backend.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -27,4 +28,8 @@ public interface BatchEnrollmentRepository extends JpaRepository<BatchEnrollment
 
     @Query("SELECT COUNT(DISTINCT e.student.id) FROM BatchEnrollment e WHERE e.batch.course.mentor.id = :mentorId AND e.isActive = true")
     long countTotalStudentsByMentorId(@Param("mentorId") UUID mentorId);
+
+    @Modifying
+    @Query("DELETE FROM BatchEnrollment e WHERE e.student = :student")
+    void deleteByStudent(@Param("student") User student);
 }
