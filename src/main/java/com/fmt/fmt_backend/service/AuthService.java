@@ -293,11 +293,20 @@ public class AuthService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
+        // Check account is active before completing login
+        if (!Boolean.TRUE.equals(user.getIsActive())) {
+            return ApiResponse.error("Account is deactivated. Please contact support.");
+        }
+
         // Try to verify OTP for email first
         boolean isEmailOtpValid = otpService.verifyOtp(email, otpCode, OtpEntity.OtpType.LOGIN);
 
-        // If email OTP fails, try mobile
+        // If email OTP fails, try mobile (only if user has a phone number)
         if (!isEmailOtpValid) {
+            boolean hasMobile = user.getPhoneNumber() != null && !user.getPhoneNumber().isBlank();
+            if (!hasMobile) {
+                return ApiResponse.error("Invalid OTP");
+            }
             boolean isMobileOtpValid = otpService.verifyOtp(
                     user.getPhoneNumber(),
                     otpCode,

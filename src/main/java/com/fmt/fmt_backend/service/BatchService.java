@@ -77,6 +77,7 @@ public class BatchService {
                 .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
+    @org.springframework.transaction.annotation.Transactional
     public void enrollStudent(EnrollmentRequest request, UUID requestingMentorId) {
         Batch batch = batchRepository.findById(request.getBatchId())
                 .orElseThrow(() -> new RuntimeException("Batch not found"));
@@ -97,7 +98,7 @@ public class BatchService {
         }
 
         long currentCount = enrollmentRepository.countByBatchAndIsActiveTrue(batch);
-        if (currentCount >= batch.getMaxStudents()) {
+        if (batch.getMaxStudents() != null && currentCount >= batch.getMaxStudents()) {
             throw new RuntimeException("Batch is full");
         }
 

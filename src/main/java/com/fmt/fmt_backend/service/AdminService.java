@@ -1,9 +1,11 @@
 package com.fmt.fmt_backend.service;
 
 import com.fmt.fmt_backend.dto.*;
-import com.fmt.fmt_backend.entity.User;
+import com.fmt.fmt_backend.entity.*;
+import com.fmt.fmt_backend.enums.BatchStatus;
 import com.fmt.fmt_backend.enums.UserRole;
 import com.fmt.fmt_backend.repository.*;
+import com.fmt.fmt_backend.service.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -35,6 +37,10 @@ public class AdminService {
     private final BatchEnrollmentRepository batchEnrollmentRepository;
     private final OtpRepository otpRepository;
     private final EmailVerificationTokenRepository emailVerificationTokenRepository;
+    private final CourseService courseService;
+    private final OtpService otpService;
+    private final EmailService emailService;
+    private final SmsService smsService;
 
     // ---------------------------------------------------------------
     // Dashboard
@@ -240,6 +246,171 @@ public class AdminService {
                         .createdAt(r.getCreatedAt())
                         .build())
                 .collect(Collectors.toList());
+    }
+
+    // ---------------------------------------------------------------
+    // Admin Content Management — Courses
+    // ---------------------------------------------------------------
+
+    public CourseResponse adminCreateCourse(AdminCourseRequest request) {
+        User mentor = userRepository.findById(request.getMentorId())
+                .orElseThrow(() -> new RuntimeException("Mentor not found"));
+        if (mentor.getUserRole() != UserRole.MENTOR) {
+            throw new RuntimeException("User is not a mentor");
+        }
+        CourseRequest courseReq = new CourseRequest();
+        courseReq.setTitle(request.getTitle());
+        courseReq.setDescription(request.getDescription());
+        courseReq.setPrice(request.getPrice());
+        return courseService.createCourse(courseReq, mentor.getId());
+    }
+
+    public CourseResponse adminUpdateCourse(UUID courseId, CourseRequest request) {
+        return courseService.updateCourse(courseId, request);
+    }
+
+    public void adminToggleCourseActive(UUID courseId, boolean isActive) {
+        courseService.toggleCourseActive(courseId, isActive);
+    }
+
+    // ---------------------------------------------------------------
+    // Admin Content Management — Batches
+    // ---------------------------------------------------------------
+
+    public BatchResponse adminCreateBatch(BatchRequest request) {
+        // Derive mentorId from the course — admin bypasses ownership by using the real mentor
+        com.fmt.fmt_backend.entity.Course course = courseRepository.findById(request.getCourseId())
+                .orElseThrow(() -> new RuntimeException("Course not found"));
+        return batchService.createBatch(request, course.getMentor().getId());
+    }
+
+    public BatchResponse adminUpdateBatchStatus(UUID batchId, BatchStatus status) {
+        com.fmt.fmt_backend.entity.Batch batch = batchRepository.findById(batchId)
+                .orElseThrow(() -> new RuntimeException("Batch not found"));
+        return batchService.updateBatchStatus(batchId, status, batch.getCourse().getMentor().getId());
+    }
+
+    // ---------------------------------------------------------------
+    // Admin Content Management — Students / Enrollment
+    // ---------------------------------------------------------------
+
+    public List<StudentSummaryResponse> adminGetBatchStudents(UUID batchId) {
+        return batchService.getBatchStudents(batchId);
+    }
+
+    @Transactional
+    public void adminEnrollStudent(UUID batchId, UUID studentId) {
+        com.fmt.fmt_backend.entity.Batch batch = batchRepository.findById(batchId)
+                .orElseThrow(() -> new RuntimeException("Batch not found"));
+        EnrollmentRequest req = new EnrollmentRequest();
+        req.setBatchId(batchId);
+        req.setStudentId(studentId);
+        batchService.enrollStudent(req, batch.getCourse().getMentor().getId());
+    }
+
+    @Transactional
+    public void adminUnenrollStudent(UUID batchId, UUID studentId) {
+        com.fmt.fmt_backend.entity.Batch batch = batchRepository.findById(batchId)
+                .orElseThrow(() -> new RuntimeException("Batch not found"));
+        batchService.unenrollStudent(batchId, studentId, batch.getCourse().getMentor().getId());
+    }
+
+    public List<StudentSummaryResponse> adminSearchStudents(String query) {
+        return batchService.searchStudents(query);
+    }
+
+    // ---------------------------------------------------------------
+    // Admin Content Management — Meetings
+    // ---------------------------------------------------------------
+
+    public MeetingResponse adminCreateMeeting(MeetingRequest request) {
+        com.fmt.fmt_backend.entity.Batch batch = batchRepository.findById(request.getBatchId())
+                .orElseThrow(() -> new RuntimeException("Batch not found"));
+        return meetingService.createMeeting(request, batch.getCourse().getMentor().getId());
+    }
+
+    public List<MeetingResponse> adminGetBatchMeetings(UUID batchId) {
+        com.fmt.fmt_backend.entity.Batch batch = batchRepository.findById(batchId)
+                .orElseThrow(() -> new RuntimeException("Batch not found"));
+        return meetingService.getBatchMeetingsForMentor(batchId, batch.getCourse().getMentor().getId());
+    }
+
+    // ---------------------------------------------------------------
+    // Admin OTP-Verified User Registration
+    // ---------------------------------------------------------------
+
+    public void adminSendRegistrationOtp(AdminSendOtpRequest request) {
+        String email = request.getEmail().toLowerCase().trim();
+        if (userRepository.existsByEmail(email)) {
+            throw new RuntimeException("Email is already registered");
+        }
+
+        String emailOtp = otpService.generateOtp(email, com.fmt.fmt_backend.entity.OtpEntity.OtpType.EMAIL_VERIFICATION);
+        emailService.sendOtpEmail(email, emailOtp, 10);
+        log.info("Admin registration OTP sent to email: {}", email);
+
+        if (request.getPhoneNumber() != null && !request.getPhoneNumber().isBlank()) {
+            String mobileOtp = otpService.generateOtp(request.getPhoneNumber(), com.fmt.fmt_backend.entity.OtpEntity.OtpType.MOBILE_VERIFICATION);
+            smsService.sendOtpSms(request.getPhoneNumber(), mobileOtp);
+            log.info("Admin registration OTP sent to mobile: {}", request.getPhoneNumber());
+        }
+    }
+
+    @Transactional
+    public UserResponse adminVerifyAndCreateUser(AdminVerifyAndCreateRequest request) {
+        String email = request.getEmail().toLowerCase().trim();
+
+        // Verify email OTP
+        boolean emailValid = otpService.verifyOtp(email, request.getEmailOtp(),
+                com.fmt.fmt_backend.entity.OtpEntity.OtpType.EMAIL_VERIFICATION);
+        if (!emailValid) {
+            throw new RuntimeException("Invalid or expired email OTP");
+        }
+
+        // Verify mobile OTP if phone was provided
+        boolean hasMobile = request.getPhoneNumber() != null && !request.getPhoneNumber().isBlank();
+        if (hasMobile) {
+            if (request.getMobileOtp() == null || request.getMobileOtp().isBlank()) {
+                throw new RuntimeException("Mobile OTP is required when phone number is provided");
+            }
+            boolean mobileValid = otpService.verifyOtp(request.getPhoneNumber(), request.getMobileOtp(),
+                    com.fmt.fmt_backend.entity.OtpEntity.OtpType.MOBILE_VERIFICATION);
+            if (!mobileValid) {
+                throw new RuntimeException("Invalid or expired mobile OTP");
+            }
+        }
+
+        // Race condition guard
+        if (userRepository.existsByEmail(email)) {
+            throw new RuntimeException("Email is already registered");
+        }
+
+        UserRole role = request.getRole() != null ? request.getRole() : UserRole.STUDENT;
+
+        User user = User.builder()
+                .firstName(request.getFirstName())
+                .lastName(request.getLastName())
+                .email(email)
+                .password(passwordEncoder.encode(request.getPassword()))
+                .phoneNumber(request.getPhoneNumber())
+                .gender(request.getGender())
+                .city(request.getCity())
+                .state(request.getState())
+                .country(request.getCountry())
+                .postalCode(request.getPostalCode())
+                .userRole(role)
+                .isActive(true)
+                .isEmailVerified(true)
+                .emailVerifiedAt(LocalDateTime.now())
+                .isMobileVerified(hasMobile)
+                .mobileVerifiedAt(hasMobile ? LocalDateTime.now() : null)
+                .failedLoginAttempts(0)
+                .lastPasswordChangeAt(LocalDateTime.now())
+                .build();
+
+        User saved = userRepository.save(user);
+        log.info("Admin OTP-verified user created: {} with role {}", saved.getEmail(), role);
+        return toUserResponse(saved);
     }
 
     // ---------------------------------------------------------------

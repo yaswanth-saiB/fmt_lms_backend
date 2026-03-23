@@ -2,6 +2,7 @@ package com.fmt.fmt_backend.controller;
 
 import com.fmt.fmt_backend.dto.*;
 import com.fmt.fmt_backend.entity.Enquiry;
+import com.fmt.fmt_backend.enums.BatchStatus;
 import com.fmt.fmt_backend.enums.UserRole;
 import com.fmt.fmt_backend.service.AdminService;
 import com.fmt.fmt_backend.service.EnquiryService;
@@ -96,6 +97,133 @@ public class AdminController {
     public ResponseEntity<ApiResponse<Void>> deleteUser(@PathVariable UUID userId) {
         adminService.deleteUser(userId);
         return ResponseEntity.ok(ApiResponse.success("User deleted successfully", null));
+    }
+
+    // ---------------------------------------------------------------
+    // Content Management — Courses
+    // ---------------------------------------------------------------
+
+    @PostMapping("/courses")
+    @Operation(summary = "Create a course for a specific mentor")
+    public ResponseEntity<ApiResponse<CourseResponse>> createCourse(
+            @Valid @RequestBody AdminCourseRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Course created", adminService.adminCreateCourse(request)));
+    }
+
+    @PutMapping("/courses/{courseId}")
+    @Operation(summary = "Update an existing course")
+    public ResponseEntity<ApiResponse<CourseResponse>> updateCourse(
+            @PathVariable UUID courseId,
+            @Valid @RequestBody CourseRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Course updated", adminService.adminUpdateCourse(courseId, request)));
+    }
+
+    @PutMapping("/courses/{courseId}/toggle-active")
+    @Operation(summary = "Activate or deactivate a course")
+    public ResponseEntity<ApiResponse<Void>> toggleCourseActive(
+            @PathVariable UUID courseId,
+            @RequestParam boolean isActive) {
+        adminService.adminToggleCourseActive(courseId, isActive);
+        String msg = isActive ? "Course activated" : "Course deactivated";
+        return ResponseEntity.ok(ApiResponse.success(msg, null));
+    }
+
+    // ---------------------------------------------------------------
+    // Content Management — Batches
+    // ---------------------------------------------------------------
+
+    @PostMapping("/batches")
+    @Operation(summary = "Create a batch for a course (admin bypasses mentor ownership)")
+    public ResponseEntity<ApiResponse<BatchResponse>> createBatch(
+            @Valid @RequestBody BatchRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Batch created", adminService.adminCreateBatch(request)));
+    }
+
+    @PutMapping("/batches/{batchId}/status")
+    @Operation(summary = "Update batch status")
+    public ResponseEntity<ApiResponse<BatchResponse>> updateBatchStatus(
+            @PathVariable UUID batchId,
+            @Valid @RequestBody BatchStatusRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Batch status updated",
+                adminService.adminUpdateBatchStatus(batchId, request.getStatus())));
+    }
+
+    // ---------------------------------------------------------------
+    // Content Management — Students / Enrollment
+    // ---------------------------------------------------------------
+
+    @GetMapping("/students/search")
+    @Operation(summary = "Search students by name or email (min 2 chars)")
+    public ResponseEntity<ApiResponse<List<StudentSummaryResponse>>> searchStudents(
+            @RequestParam String q) {
+        return ResponseEntity.ok(ApiResponse.success("Search results", adminService.adminSearchStudents(q)));
+    }
+
+    @GetMapping("/batches/{batchId}/students")
+    @Operation(summary = "Get enrolled students for a batch")
+    public ResponseEntity<ApiResponse<List<StudentSummaryResponse>>> getBatchStudents(
+            @PathVariable UUID batchId) {
+        return ResponseEntity.ok(ApiResponse.success("Students fetched", adminService.adminGetBatchStudents(batchId)));
+    }
+
+    @PostMapping("/batches/{batchId}/enroll")
+    @Operation(summary = "Enroll a student into a batch")
+    public ResponseEntity<ApiResponse<Void>> enrollStudent(
+            @PathVariable UUID batchId,
+            @RequestParam UUID studentId) {
+        adminService.adminEnrollStudent(batchId, studentId);
+        return ResponseEntity.ok(ApiResponse.success("Student enrolled", null));
+    }
+
+    @DeleteMapping("/batches/{batchId}/students/{studentId}")
+    @Operation(summary = "Unenroll a student from a batch")
+    public ResponseEntity<ApiResponse<Void>> unenrollStudent(
+            @PathVariable UUID batchId,
+            @PathVariable UUID studentId) {
+        adminService.adminUnenrollStudent(batchId, studentId);
+        return ResponseEntity.ok(ApiResponse.success("Student unenrolled", null));
+    }
+
+    // ---------------------------------------------------------------
+    // Content Management — Meetings
+    // ---------------------------------------------------------------
+
+    @PostMapping("/meetings")
+    @Operation(summary = "Create a Zoom meeting for a batch (admin)")
+    public ResponseEntity<ApiResponse<MeetingResponse>> createMeeting(
+            @Valid @RequestBody MeetingRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Meeting created", adminService.adminCreateMeeting(request)));
+    }
+
+    @GetMapping("/batches/{batchId}/meetings")
+    @Operation(summary = "Get all meetings for a batch (admin view — includes startUrl)")
+    public ResponseEntity<ApiResponse<List<MeetingResponse>>> getBatchMeetings(
+            @PathVariable UUID batchId) {
+        return ResponseEntity.ok(ApiResponse.success("Meetings fetched", adminService.adminGetBatchMeetings(batchId)));
+    }
+
+    // ---------------------------------------------------------------
+    // OTP-Verified User Registration
+    // ---------------------------------------------------------------
+
+    @PostMapping("/users/send-otp")
+    @Operation(summary = "Step 1: Send OTP to email (and mobile if provided) for verified registration")
+    public ResponseEntity<ApiResponse<Void>> sendRegistrationOtp(
+            @Valid @RequestBody AdminSendOtpRequest request) {
+        adminService.adminSendRegistrationOtp(request);
+        boolean hasMobile = request.getPhoneNumber() != null && !request.getPhoneNumber().isBlank();
+        String msg = hasMobile
+                ? "OTP sent to email and mobile. Both must be verified."
+                : "OTP sent to email.";
+        return ResponseEntity.ok(ApiResponse.success(msg, null));
+    }
+
+    @PostMapping("/users/verify-and-create")
+    @Operation(summary = "Step 2: Verify OTPs and create the user account")
+    public ResponseEntity<ApiResponse<UserResponse>> verifyAndCreateUser(
+            @Valid @RequestBody AdminVerifyAndCreateRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("User created successfully",
+                adminService.adminVerifyAndCreateUser(request)));
     }
 
     // ---------------------------------------------------------------

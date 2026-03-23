@@ -56,7 +56,32 @@ public class CourseService {
         return toResponse(course);
     }
 
-    private CourseResponse toResponse(Course c) {
+    public CourseResponse updateCourse(UUID courseId, CourseRequest request) {
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new RuntimeException("Course not found"));
+        if (request.getTitle() != null && !request.getTitle().isBlank()) {
+            course.setTitle(request.getTitle());
+        }
+        if (request.getDescription() != null) {
+            course.setDescription(request.getDescription());
+        }
+        if (request.getPrice() != null) {
+            course.setPrice(request.getPrice());
+        }
+        Course saved = courseRepository.save(course);
+        log.info("Course updated: {}", courseId);
+        return toResponse(saved);
+    }
+
+    public void toggleCourseActive(UUID courseId, boolean isActive) {
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new RuntimeException("Course not found"));
+        course.setIsActive(isActive);
+        courseRepository.save(course);
+        log.info("Course {} isActive set to {}", courseId, isActive);
+    }
+
+    public CourseResponse toResponse(Course c) {
         return CourseResponse.builder()
                 .id(c.getId())
                 .title(c.getTitle())

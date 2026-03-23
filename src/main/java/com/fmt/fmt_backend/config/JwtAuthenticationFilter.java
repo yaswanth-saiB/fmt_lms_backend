@@ -1,5 +1,8 @@
 package com.fmt.fmt_backend.config;
 
+import com.fmt.fmt_backend.entity.User;
+import com.fmt.fmt_backend.repository.UserRepository;
+import com.fmt.fmt_backend.repository.UserSessionRepository;
 import com.fmt.fmt_backend.service.CookieService;
 import com.fmt.fmt_backend.service.CustomUserDetailsService;
 import com.fmt.fmt_backend.service.JwtService;
@@ -7,6 +10,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.MediaType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -19,6 +23,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Intercepts every request and authenticates users via JWT.
@@ -38,6 +43,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final CookieService cookieService;
     private final CustomUserDetailsService userDetailsService;
+    private final UserSessionRepository userSessionRepository;
+    private final UserRepository userRepository;
 
     @Override
     protected void doFilterInternal(
@@ -78,7 +85,33 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
 
                 if (jwtService.isTokenValid(jwt, userDetails)) {
-                    log.debug("🔐 Token validated for user: {}", userEmail);
+
+                    // 1. Check user account is still active (catches admin deactivation in real-time)
+                    User user = userRepository.findByEmail(userEmail).orElse(null);
+                    if (user == null || !Boolean.TRUE.equals(user.getIsActive())) {
+                        log.warn("🚫 Rejected token for deactivated user: {}", userEmail);
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                        response.setContentType("application/json");
+                        response.getWriter().write("{\"success\":false,\"message\":\"Account is deactivated\"}");
+                        return;
+                    }
+
+                    // 2. Validate session is still active in DB (catches device revocation in real-time)
+                    UUID sessionId = jwtService.extractSessionId(jwt);
+                    if (sessionId != null) {
+                        boolean sessionActive = userSessionRepository
+                                .findBySessionIdAndActiveTrue(sessionId)
+                                .isPresent();
+                        if (!sessionActive) {
+                            log.warn("🚫 Rejected token — session revoked: {} user: {}", sessionId, userEmail);
+                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            response.setContentType("application/json");
+                            response.getWriter().write("{\"success\":false,\"message\":\"Session expired. Please log in again.\"}");
+                            return;
+                        }
+                    }
+
+                    log.debug("🔐 Token + session validated for user: {}", userEmail);
 
                     UsernamePasswordAuthenticationToken authToken =
                             new UsernamePasswordAuthenticationToken(
