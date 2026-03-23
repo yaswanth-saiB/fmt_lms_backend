@@ -25,4 +25,8 @@ public interface EnquiryRepository extends JpaRepository<Enquiry, UUID> {
                              @Param("endOfDay") LocalDateTime endOfDay);
 
     List<Enquiry> findByMobile(String mobile);
+
+    List<Enquiry> findAllByOrderByCreatedAtDesc();
+
+    List<Enquiry> findByStatusOrderByCreatedAtDesc(Enquiry.EnquiryStatus status);
 }

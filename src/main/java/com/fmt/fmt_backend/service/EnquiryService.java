@@ -4,6 +4,10 @@ import com.fmt.fmt_backend.dto.EnquiryRequest;
 import com.fmt.fmt_backend.dto.EnquiryResponse;
 import com.fmt.fmt_backend.entity.Enquiry;
 import com.fmt.fmt_backend.repository.EnquiryRepository;
+
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,6 +50,27 @@ public class EnquiryService {
         }
 
         return mapToResponse(savedEnquiry);
+    }
+
+    public List<EnquiryResponse> getAll(Enquiry.EnquiryStatus status) {
+        List<Enquiry> enquiries = (status != null)
+                ? enquiryRepository.findByStatusOrderByCreatedAtDesc(status)
+                : enquiryRepository.findAllByOrderByCreatedAtDesc();
+        return enquiries.stream().map(this::mapToResponse).collect(Collectors.toList());
+    }
+
+    public EnquiryResponse getById(UUID id) {
+        Enquiry enquiry = enquiryRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Enquiry not found"));
+        return mapToResponse(enquiry);
+    }
+
+    @Transactional
+    public EnquiryResponse updateStatus(UUID id, Enquiry.EnquiryStatus newStatus) {
+        Enquiry enquiry = enquiryRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Enquiry not found"));
+        enquiry.setStatus(newStatus);
+        return mapToResponse(enquiryRepository.save(enquiry));
     }
 
     private String getClientIp() {

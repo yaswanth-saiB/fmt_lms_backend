@@ -1,8 +1,10 @@
 package com.fmt.fmt_backend.controller;
 
 import com.fmt.fmt_backend.dto.*;
+import com.fmt.fmt_backend.entity.Enquiry;
 import com.fmt.fmt_backend.enums.UserRole;
 import com.fmt.fmt_backend.service.AdminService;
+import com.fmt.fmt_backend.service.EnquiryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -22,6 +24,7 @@ import java.util.UUID;
 public class AdminController {
 
     private final AdminService adminService;
+    private final EnquiryService enquiryService;
 
     // ---------------------------------------------------------------
     // Dashboard
@@ -121,5 +124,33 @@ public class AdminController {
     @Operation(summary = "List all recordings across all batches")
     public ResponseEntity<ApiResponse<List<RecordingResponse>>> getRecordings() {
         return ResponseEntity.ok(ApiResponse.success("Recordings fetched", adminService.getAllRecordings()));
+    }
+
+    // ---------------------------------------------------------------
+    // Enquiries
+    // ---------------------------------------------------------------
+
+    @GetMapping("/enquiries")
+    @Operation(summary = "List all enquiries — optionally filter by status")
+    public ResponseEntity<ApiResponse<List<EnquiryResponse>>> getEnquiries(
+            @RequestParam(required = false) Enquiry.EnquiryStatus status) {
+        return ResponseEntity.ok(ApiResponse.success("Enquiries fetched", enquiryService.getAll(status)));
+    }
+
+    @GetMapping("/enquiries/{enquiryId}")
+    @Operation(summary = "Get a single enquiry by ID")
+    public ResponseEntity<ApiResponse<EnquiryResponse>> getEnquiry(@PathVariable UUID enquiryId) {
+        return ResponseEntity.ok(ApiResponse.success("Enquiry fetched", enquiryService.getById(enquiryId)));
+    }
+
+    @PutMapping("/enquiries/{enquiryId}/status")
+    @Operation(summary = "Update enquiry status — NEW / CONTACTED / CLOSED")
+    public ResponseEntity<ApiResponse<EnquiryResponse>> updateEnquiryStatus(
+            @PathVariable UUID enquiryId,
+            @Valid @RequestBody UpdateEnquiryStatusRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Enquiry status updated",
+                enquiryService.updateStatus(enquiryId, request.getStatus())
+        ));
     }
 }
