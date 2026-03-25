@@ -62,6 +62,11 @@ Every access token contains:
 ### Filter Order (JwtAuthenticationFilter)
 1. Look for `access_token` cookie → use if found
 2. Fallback to `Authorization: Bearer <token>` header → for Swagger testing
+3. After JWT signature validation: check `user.getIsActive()` → 401 JSON if deactivated
+4. Check `userSessionRepository.findBySessionIdAndActiveTrue(sessionId)` → 401 JSON if session not found/revoked
+
+> This makes session revocation **immediate** — revoking a device kicks the user out on next request, not after token expiry.
+> Error JSON: `{"success":false,"message":"Session expired. Please log in again."}` or `{"success":false,"message":"Account is deactivated"}`
 
 ### Cookie API (CookieService)
 - `buildAuthCookieHeaders(accessToken, refreshToken)` → returns `HttpHeaders`
@@ -85,14 +90,17 @@ Every access token contains:
 ```
 POST /api/auth/login              { email, password }
     → validates credentials
-    → sends OTP to email + mobile
+    → sends OTP to email (+ mobile if phone exists — skips SMS if null)
     → returns { requiresOtp: true }
 
 POST /api/auth/login/verify-otp  { email, otp }
     → validates OTP (email OR mobile OTP accepted)
+    → checks isActive — 400 if deactivated
     → Sets cookies: access_token, refresh_token
-    → Returns: { userId, email, firstName, lastName, role, sessionId, expiresIn }
+    → Returns: { userId, email, firstName, lastName, role, mustChangePassword, sessionId, expiresIn }
 ```
+
+> `mustChangePassword: true` means frontend must redirect to change-password page before allowing other navigation.
 
 ## Signup Flow (4-step with OTP)
 ```
@@ -113,12 +121,19 @@ POST /api/auth/signup/simple   — FOR TESTING ONLY — sets cookies
 ## Key Entities
 | Entity | Table | Notes |
 |--------|-------|-------|
-| `User` | `users` | UUID PK, roles: STUDENT/MENTOR/ADMIN |
+| `User` | `users` | UUID PK, roles: STUDENT/MENTOR/ADMIN. Has `mustChangePassword` flag. |
 | `DeviceEntity` | `devices` | One per browser/device. Fingerprint = UUID_v3(MD5(UA+IP), UTF-8) |
 | `UserSession` | `user_sessions` | Created at login. `sessionId` embedded in JWT |
 | `RefreshTokenEntity` | `refresh_tokens` | Linked to device + session. Has `sessionId` column |
 | `OtpEntity` | `otps` | Email/mobile OTP records |
-| `Enquiry` | `enquiries` | Public enquiry form submissions |
+| `Enquiry` | `enquiries` | Public enquiry form submissions. Status: NEW → CONTACTED → CLOSED |
+
+### User.mustChangePassword
+- `true` for all admin-created users (via `POST /api/admin/users` or OTP-verified flow)
+- `false` for self-registered users (signup flow)
+- Cleared to `false` automatically when user calls `PUT /api/auth/change-password`
+- Returned in `/api/auth/me` and login verify-otp response
+- Frontend must redirect to change-password screen if `mustChangePassword === true`
 
 ---
 
@@ -253,9 +268,21 @@ INFO_EMAIL_*    → noreply-info@firstmilliontrade.com
 HELP_EMAIL_*    → help@firstmilliontrade.com
 ARCHIVE_EMAIL_* → archive@firstmilliontrade.com
 ADMIN_EMAIL_*   → admin@firstmilliontrade.com
+
+# Admin DataSeeder (first-boot bootstrap — creates default ADMIN if none exists)
+ADMIN_SEED_EMAIL                    (default: admin@firstmilliontrade.com)
+ADMIN_SEED_PASSWORD                 (default: Admin@1234 — CHANGE IN PRODUCTION)
+ADMIN_SEED_FIRST_NAME               (default: Admin)
+ADMIN_SEED_LAST_NAME                (default: FMT)
+
+# Zoom (required — app fails to start if missing)
+ZOOM_ACCOUNT_ID
+ZOOM_CLIENT_ID
+ZOOM_CLIENT_SECRET
 ```
 > Local .env file is at project root. **Never commit it.**
 > Production .env is at `/home/ubuntu/.env` on EC2 (chmod 600).
+> **⚠️ ZOOM_* vars are required even if not using Zoom features — missing them causes startup failure.**
 
 ---
 
@@ -391,17 +418,107 @@ The Swagger UI is at `/swagger-ui.html`.
 - [ ] Fix logging package: `com.tradingapp` → `com.fmt.fmt_backend` in application.yaml
 - [ ] Move DB from EC2 local → AWS RDS (currently on same EC2 instance — no automated backups)
 - [ ] Add `PATCH` to CORS allowed methods if any future endpoint needs it
+- [ ] Change `ADMIN_SEED_PASSWORD` default before go-live (currently `Admin@1234`)
 
 ---
 
 ## Decisions & Constraints
 - UUID primary keys on all entities — prevents enumeration attacks, safe for distributed use
 - Device fingerprint changes on IP change (VPN/mobile network switch) — intentional, treated as new device
-- OTP sent to BOTH email and mobile on login; user can use either one
+- OTP sent to BOTH email and mobile on login; user can use either one; **SMS is skipped if phone is null/blank**
 - `revokeDevice()` must call both `refreshTokenRepository` AND `userSessionRepository` — calling only one leaves stale records
 - `/api/auth/token/refresh` and `/api/auth/token/rotate` must be `permitAll` in SecurityConfig — access_token may be expired when these are called
 - Cookie headers must be set via `ResponseEntity.headers()` (not `HttpServletResponse.addHeader()`) — Spring MVC 6.x swallows raw addHeader calls
 - Frontend must use `credentials: 'include'` (fetch) or `withCredentials: true` (axios) — without this no cookies are sent and every request gets 401
+- `JwtAuthenticationFilter` now validates DB session per request (`userSessionRepository.findBySessionIdAndActiveTrue`) — session revocation is immediate, not delayed until token expiry
+- Admin bypasses mentor ownership by reading mentorId from the batch/course entity itself, then calling existing service methods with that mentorId — no duplicate logic, no ownership check bypass
+- Admin delete user cascade order (FK constraints): refresh_tokens → user_sessions → devices → batch_enrollments → otps → email_verification_tokens → users. MENTOR deletion blocked if they have courses.
+- `mustChangePassword` is set `true` for all admin-created users; `false` for self-registered; cleared on `PUT /api/auth/change-password`
+- DataSeeder (`ApplicationRunner`) creates default ADMIN on first startup only if no ADMIN exists — safe to leave enabled permanently
+- Admin OTP registration: full user form + OTPs submitted in one request (`POST /api/admin/users/verify-and-create`) — no temp token needed
+- `Map.of()` returns an unmodifiable map — always use `new HashMap<>()` when the map needs fields added later (e.g., in auth response building)
+
+---
+
+## Admin Module Endpoints (`/api/admin/**` — ADMIN role only)
+
+### Dashboard
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/dashboard` | Stats + recent users + upcoming classes |
+
+### User Management
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/users` | All users (optional `?role=STUDENT\|MENTOR\|ADMIN`) |
+| GET | `/api/admin/users/{id}` | Single user |
+| POST | `/api/admin/users` | Create user (password auto-set, `mustChangePassword=true`) |
+| PUT | `/api/admin/users/{id}/role` | Change role |
+| PUT | `/api/admin/users/{id}/status` | Activate/deactivate |
+| DELETE | `/api/admin/users/{id}` | Delete user (cascading — blocks MENTOR with courses) |
+| POST | `/api/admin/users/{id}/reset-password` | Force reset password |
+| POST | `/api/admin/users/send-otp` | Send email+mobile OTP before OTP-verified creation |
+| POST | `/api/admin/users/verify-and-create` | Verify OTPs + create user (`mustChangePassword=true`) |
+
+### Course Management
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/courses` | All courses |
+| POST | `/api/admin/courses` | Create course (pass `mentorId`) |
+| PUT | `/api/admin/courses/{id}` | Update course |
+| PUT | `/api/admin/courses/{id}/toggle-active` | Toggle active status |
+
+### Batch Management
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/batches` | All batches |
+| POST | `/api/admin/batches` | Create batch (mentorId derived from course) |
+| PUT | `/api/admin/batches/{id}/status` | Update batch status |
+
+### Enrollment
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/students/search` | Search students by name/email (`?query=`) |
+| GET | `/api/admin/batches/{id}/students` | Students in a batch |
+| POST | `/api/admin/batches/{id}/enroll` | Enroll student (`{ studentId }`) |
+| DELETE | `/api/admin/batches/{id}/students/{studentId}` | Unenroll student |
+
+### Meetings
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/classes` | All meetings |
+| POST | `/api/admin/meetings` | Create meeting (mentorId derived from batch) |
+| GET | `/api/admin/batches/{id}/meetings` | Meetings for a batch |
+
+### Recordings
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/recordings` | All recordings |
+
+### Enquiries
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/enquiries` | All enquiries (optional `?status=NEW\|CONTACTED\|CLOSED`) |
+| GET | `/api/admin/enquiries/{id}` | Single enquiry |
+| PUT | `/api/admin/enquiries/{id}/status` | Update enquiry status |
+
+---
+
+## Mentor Module Enquiry Endpoints (`/api/mentor/**` — MENTOR role only)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/mentor/enquiries` | All enquiries (optional `?status=`) |
+| GET | `/api/mentor/enquiries/{id}` | Single enquiry |
+| PUT | `/api/mentor/enquiries/{id}/status` | Update enquiry status |
+
+---
+
+## Admin Bootstrap (DataSeeder)
+- `DataSeeder` implements `ApplicationRunner` — runs on every startup
+- Checks `userRepository.countByUserRole(ADMIN)` — if > 0, skips (idempotent)
+- Creates admin from env vars `ADMIN_SEED_*` (see Environment Variables section)
+- Default credentials: `admin@firstmilliontrade.com` / `Admin@1234`
+- **Change `ADMIN_SEED_PASSWORD` in EC2 `.env` before first production deploy**
 
 ---
 
@@ -410,3 +527,6 @@ The Swagger UI is at `/swagger-ui.html`.
 - `Device_Management.docx` — device fingerprinting, limits, streaming, API reference
 - `API_Reference_Frontend.docx` — all endpoints with payloads and responses
 - `FMT_Frontend_Integration_Guide.docx` — complete frontend integration guide (share this with frontend team)
+- `Enquiry_Module_Frontend_Integration.md` — enquiry management endpoints for admin + mentor
+- `Admin_Content_Management_Frontend_Integration.md` — admin courses/batches/enrollment/meetings endpoints
+- `Admin_Module_Frontend_Integration.md` — full admin module reference including delete user

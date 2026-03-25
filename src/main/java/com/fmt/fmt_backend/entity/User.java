@@ -82,6 +82,9 @@ public class User extends BaseEntity {
     @Column(name = "last_password_change_at")
     private LocalDateTime lastPasswordChangeAt;
 
+    @Column(name = "must_change_password")
+    private Boolean mustChangePassword;
+
     @PrePersist
     public void prePersist() {
         if (userRole == null) {
@@ -101,6 +104,9 @@ public class User extends BaseEntity {
         }
         if (lastPasswordChangeAt == null) {
             lastPasswordChangeAt = LocalDateTime.now();
+        }
+        if (mustChangePassword == null) {
+            mustChangePassword = false;
         }
     }
 }

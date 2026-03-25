@@ -123,6 +123,7 @@ public class AdminService {
                 .mobileVerifiedAt(LocalDateTime.now())
                 .failedLoginAttempts(0)
                 .lastPasswordChangeAt(LocalDateTime.now())
+                .mustChangePassword(true)
                 .build();
 
         User saved = userRepository.save(user);
@@ -406,6 +407,7 @@ public class AdminService {
                 .mobileVerifiedAt(hasMobile ? LocalDateTime.now() : null)
                 .failedLoginAttempts(0)
                 .lastPasswordChangeAt(LocalDateTime.now())
+                .mustChangePassword(true)
                 .build();
 
         User saved = userRepository.save(user);
@@ -436,6 +438,7 @@ public class AdminService {
                 .lastLoginAt(u.getLastLoginAt())
                 .createdAt(u.getCreatedAt())
                 .failedLoginAttempts(u.getFailedLoginAttempts())
+                .mustChangePassword(Boolean.TRUE.equals(u.getMustChangePassword()))
                 .build();
     }
 }

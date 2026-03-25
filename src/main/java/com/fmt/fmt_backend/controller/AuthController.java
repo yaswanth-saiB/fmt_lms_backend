@@ -184,15 +184,15 @@ public class AuthController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> getCurrentUser() {
         return authService.getCurrentUser()
                 .map(user -> {
-                    Map<String, Object> userInfo = Map.of(
-                            "id", user.getId().toString(),
-                            "email", user.getEmail(),
-                            "firstName", user.getFirstName(),
-                            "lastName", user.getLastName(),
-                            "role", user.getUserRole().name(),
-                            "isEmailVerified", user.getIsEmailVerified(),
-                            "isMobileVerified", user.getIsMobileVerified()
-                    );
+                    Map<String, Object> userInfo = new java.util.HashMap<>();
+                    userInfo.put("id", user.getId().toString());
+                    userInfo.put("email", user.getEmail());
+                    userInfo.put("firstName", user.getFirstName());
+                    userInfo.put("lastName", user.getLastName());
+                    userInfo.put("role", user.getUserRole().name());
+                    userInfo.put("isEmailVerified", user.getIsEmailVerified());
+                    userInfo.put("isMobileVerified", user.getIsMobileVerified());
+                    userInfo.put("mustChangePassword", Boolean.TRUE.equals(user.getMustChangePassword()));
                     return ResponseEntity.ok(ApiResponse.<Map<String, Object>>success("User info", userInfo));
                 })
                 .orElse(ResponseEntity.status(401).body(ApiResponse.error("Not authenticated")));

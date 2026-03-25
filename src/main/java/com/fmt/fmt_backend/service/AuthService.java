@@ -336,6 +336,7 @@ public class AuthService {
         responseData.put("firstName", user.getFirstName());
         responseData.put("lastName", user.getLastName());
         responseData.put("role", user.getUserRole().name());
+        responseData.put("mustChangePassword", Boolean.TRUE.equals(user.getMustChangePassword()));
 
         return ApiResponse.success("Login successful", responseData);
     }
@@ -403,6 +404,7 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setLastPasswordChangeAt(LocalDateTime.now());
         user.setFailedLoginAttempts(0);
+        user.setMustChangePassword(false);
         userRepository.save(user);
         log.info("Password changed for user: {}", user.getEmail());
     }

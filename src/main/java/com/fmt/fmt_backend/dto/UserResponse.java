@@ -28,4 +28,5 @@ public class UserResponse {
     private LocalDateTime lastLoginAt;
     private LocalDateTime createdAt;
     private Integer failedLoginAttempts;
+    private Boolean mustChangePassword;
 }
