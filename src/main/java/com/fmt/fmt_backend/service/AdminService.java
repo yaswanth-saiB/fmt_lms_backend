@@ -13,6 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -127,6 +128,10 @@ public class AdminService {
 
         User saved = userRepository.save(user);
         log.info("Admin created user: {} with role {}", saved.getEmail(), role);
+
+        // Notify the user their account has been created
+        emailService.sendWelcomeEmail(saved.getEmail(), saved.getFirstName(), role.name());
+
         return toUserResponse(saved);
     }
 
@@ -236,15 +241,24 @@ public class AdminService {
     public List<RecordingResponse> getAllRecordings() {
         return recordingRepository.findAll()
                 .stream()
-                .map(r -> RecordingResponse.builder()
-                        .id(r.getId())
-                        .title(r.getTitle())
-                        .batchId(r.getBatch().getId())
-                        .batchName(r.getBatch().getName())
-                        .status(r.getStatus())
-                        .durationMins(r.getDurationMins())
-                        .createdAt(r.getCreatedAt())
-                        .build())
+                .map(r -> {
+                    String courseName = null;
+                    try {
+                        courseName = r.getBatch().getCourse() != null
+                                ? r.getBatch().getCourse().getTitle() : null;
+                    } catch (Exception ignored) { /* lazy load — safe to skip */ }
+                    return RecordingResponse.builder()
+                            .id(r.getId())
+                            .title(r.getTitle())
+                            .batchId(r.getBatch().getId())
+                            .batchName(r.getBatch().getName())
+                            .courseName(courseName)
+                            .status(r.getStatus())
+                            .durationMins(r.getDurationMins())
+                            .recordedDate(r.getCreatedAt() != null ? r.getCreatedAt().toLocalDate() : null)
+                            .createdAt(r.getCreatedAt())
+                            .build();
+                })
                 .collect(Collectors.toList());
     }
 
@@ -395,6 +409,10 @@ public class AdminService {
 
         User saved = userRepository.save(user);
         log.info("Admin OTP-verified user created: {} with role {}", saved.getEmail(), role);
+
+        // Notify the user their account has been created
+        emailService.sendWelcomeEmail(saved.getEmail(), saved.getFirstName(), role.name());
+
         return toUserResponse(saved);
     }
 

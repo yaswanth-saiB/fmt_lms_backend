@@ -18,6 +18,13 @@ public interface RecordingRepository extends JpaRepository<Recording, UUID> {
 
     List<Recording> findByBatchAndStatusOrderByCreatedAtDesc(Batch batch, RecordingStatus status);
 
+    // Used by mentor/admin to list all recordings for a batch (all statuses)
+    List<Recording> findByBatchOrderByCreatedAtDesc(Batch batch);
+
+    // Eagerly fetches meeting to avoid LazyInitializationException in async processing
+    @Query("SELECT r FROM Recording r JOIN FETCH r.meeting WHERE r.id = :id")
+    Optional<Recording> findByIdWithMeeting(@Param("id") UUID id);
+
     // Used by Zoom webhook — find existing recording for a meeting to avoid duplicates
     Optional<Recording> findByMeeting_ZoomMeetingId(String zoomMeetingId);
 

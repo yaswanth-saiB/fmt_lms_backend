@@ -43,6 +43,22 @@ After batch end + 2 months → auto-deleted (status: EXPIRED)
 
 ---
 
+## Response Format
+
+All endpoints wrap their response in a standard envelope:
+
+```json
+{
+  "success": true,
+  "message": "Recordings fetched",
+  "data": [ ... ]
+}
+```
+
+Read `response.data` to get the actual payload. On errors, `success` is `false` and `message` describes the error.
+
+---
+
 ## Endpoints
 
 ---
@@ -67,16 +83,20 @@ Authorization: (cookie or Bearer token)
     "id": "uuid",
     "title": "Class 12 - Risk Management",
     "recordedDate": "2026-04-10",
-    "durationMins": 120
+    "durationMins": 120,
+    "status": "AVAILABLE"
   },
   {
     "id": "uuid",
     "title": "Class 11 - Chart Patterns",
     "recordedDate": "2026-04-07",
-    "durationMins": 90
+    "durationMins": 90,
+    "status": "AVAILABLE"
   }
 ]
 ```
+
+> `status` is always `AVAILABLE` in this response — the API filters server-side. Included so the frontend can render consistently without special-casing.
 
 **Error responses:**
 | Code | Meaning |
@@ -114,6 +134,13 @@ Authorization: (cookie or Bearer token)
 |-------|------|-------------|
 | `playUrl` | `string` | Signed Bunny.net Stream URL — valid for 3 hours |
 | `expiresIn` | `number` | Seconds until the URL expires (always 10800 = 3h) |
+
+**Signed URL algorithm (backend reference):**
+```
+message = bunnyVideoId + expiryTimestamp
+token   = Base64URL(HMAC-SHA256(key=bunnyTokenKey, message))
+url     = https://{cdnHostname}/{bunnyVideoId}/play?token={token}&expires={expiryTimestamp}
+```
 
 **Error responses:**
 | Code | Meaning |

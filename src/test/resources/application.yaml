@@ -1,0 +1,155 @@
+spring:
+  application:
+    name: fmt-backend-test
+  dotenv:
+    ignoreIfMalformed: true
+    ignoreIfMissing: true
+
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+  thymeleaf:
+    cache: false
+
+email:
+  otp:
+    host: localhost
+    port: 25
+    username: test@test.com
+    password: test
+    from: test@test.com
+  info:
+    host: localhost
+    port: 25
+    username: test@test.com
+    password: test
+    from: test@test.com
+  help:
+    host: localhost
+    port: 25
+    username: test@test.com
+    password: test
+    from: test@test.com
+  archive:
+    host: localhost
+    port: 25
+    username: test@test.com
+    password: test
+    from: test@test.com
+  admin:
+    host: localhost
+    port: 25
+    username: test@test.com
+    password: test
+    from: test@test.com
+
+twilio:
+  account-sid: ACtest000000000000000000000000000000
+  auth-token: test_auth_token_00000000000000000000
+  phone-number: "+10000000000"
+
+sms:
+  max-length: 160
+  enable-unicode: false
+  country-code: IN
+
+sendgrid:
+  api-key: SG.test_key
+  enabled: false
+  admin-email: admin@test.com
+  archive:
+    enabled: false
+    email: archive@test.com
+    name: Test Archive
+  senders:
+    otp:
+      email: otp@test.com
+      name: Test OTP
+      bcc-archive: false
+    welcome:
+      email: welcome@test.com
+      name: Test Welcome
+      bcc-archive: false
+    promo:
+      email: promo@test.com
+      name: Test Promo
+      bcc-archive: false
+    support:
+      email: support@test.com
+      name: Test Support
+      bcc-archive: false
+    admin:
+      email: admin@test.com
+      name: Test Admin
+      bcc-archive: false
+
+jwt:
+  secret: dGVzdC1zZWNyZXQta2V5LWZvci11bml0LXRlc3RzLW9ubHktbm90LXJlYWw=
+  access-token-expiration: 21600000
+  refresh-token-expiration: 1209600000
+
+scheduling:
+  enabled: false
+
+otp:
+  expiry-minutes: 5
+  max-attempts: 3
+  lockout-minutes: 10
+  resend-cooldown-seconds: 60
+  length: 6
+
+device:
+  max-sessions-per-user: 1
+  max-streaming-sessions: 1
+  inactive-days: 30
+
+app:
+  base-url: http://localhost:8080
+  frontend-url: http://localhost:3000
+  environment: test
+  enable-bcc: false
+  bcc-address: archive@test.com
+  cookie:
+    secure: false
+    domain:
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+zoom:
+  account-id: test_account_id
+  client-id: test_client_id
+  client-secret: test_client_secret
+  webhook-secret: test_webhook_secret
+
+bunny:
+  library-id: "999999"
+  api-key: test_bunny_api_key
+  cdn-hostname: test.b-cdn.net
+  token-key: test_bunny_token_key
+
+seed:
+  admin:
+    email: admin@test.com
+    password: Admin@1234
+    first-name: Admin
+    last-name: Test
+
+logging:
+  level:
+    com.fmt: WARN
+    org.springframework: WARN

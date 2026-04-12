@@ -1,9 +1,14 @@
 package com.fmt.fmt_backend.service;
 
+import com.fmt.fmt_backend.dto.PlayUrlResponse;
+import com.fmt.fmt_backend.dto.RecordingResponse;
+import com.fmt.fmt_backend.dto.StudentRecordingResponse;
 import com.fmt.fmt_backend.entity.Batch;
 import com.fmt.fmt_backend.entity.Meeting;
 import com.fmt.fmt_backend.entity.Recording;
+import com.fmt.fmt_backend.entity.User;
 import com.fmt.fmt_backend.enums.RecordingStatus;
+import com.fmt.fmt_backend.repository.BatchEnrollmentRepository;
 import com.fmt.fmt_backend.repository.BatchRepository;
 import com.fmt.fmt_backend.repository.MeetingRepository;
 import com.fmt.fmt_backend.repository.RecordingRepository;
@@ -16,11 +21,14 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +41,8 @@ public class RecordingService {
 
     private final RecordingRepository recordingRepository;
     private final MeetingRepository meetingRepository;
+    private final BatchRepository batchRepository;
+    private final BatchEnrollmentRepository batchEnrollmentRepository;
     private final RestTemplate restTemplate = new RestTemplate();
     private final ZoomService zoomService;
 
@@ -174,14 +184,24 @@ public class RecordingService {
 
     /**
      * Core processing — streams the Zoom recording into Bunny.net.
-     * No full file buffering in memory: streams directly from Zoom to Bunny.
+     *
+     * Re-fetches the recording with JOIN FETCH on meeting to avoid LazyInitializationException.
+     * The entity passed in from processRecordingAsync is detached (its transaction already closed),
+     * so accessing lazy associations on it would fail without this re-fetch.
+     *
+     * Note: @Transactional is intentionally NOT on this method — it is called via this.processRecording()
+     * (same-bean self-invocation), which bypasses the Spring AOP proxy. Each repository.save() call
+     * uses its own transaction, which is sufficient here.
      */
-    @Transactional
     protected void processRecording(Recording recording) {
-        String zoomDownloadUrl  = recording.getZoomDownloadUrl();
-        String title            = recording.getTitle();
-        UUID   recordingId      = recording.getId();
-        String zoomMeetingId    = recording.getMeeting().getZoomMeetingId();
+        // Re-fetch with meeting eagerly loaded — entity from caller is detached
+        Recording r = recordingRepository.findByIdWithMeeting(recording.getId())
+                .orElseThrow(() -> new RuntimeException("Recording not found: " + recording.getId()));
+
+        String zoomDownloadUrl  = r.getZoomDownloadUrl();
+        String title            = r.getTitle();
+        UUID   recordingId      = r.getId();
+        String zoomMeetingId    = r.getMeeting().getZoomMeetingId();
 
         // ---- Step 1: Create video object in Bunny ----
         String bunnyVideoId = createBunnyVideoObject(title);
@@ -192,8 +212,8 @@ public class RecordingService {
         log.info("Video streamed to Bunny for recording={}", recordingId);
 
         // ---- Step 3: Update DB with Bunny video ID (status stays PROCESSING — Bunny webhook sets AVAILABLE) ----
-        recording.setBunnyVideoId(bunnyVideoId);
-        recordingRepository.save(recording);
+        r.setBunnyVideoId(bunnyVideoId);
+        recordingRepository.save(r);
 
         // ---- Step 4: Delete recording from Zoom Cloud to stay within storage limits ----
         deleteZoomRecording(zoomMeetingId);
@@ -381,6 +401,164 @@ public class RecordingService {
         } catch (Exception e) {
             // Non-fatal — Zoom keeps recordings for 30 days anyway; we still have zoom_download_url in DB
             log.warn("Could not delete Zoom recording for meeting {}: {}", zoomMeetingId, e.getMessage());
+        }
+    }
+
+    // =========================================================================
+    // STUDENT — list available recordings for a batch
+    // =========================================================================
+
+    /**
+     * Returns available recordings for a batch, verifying the student is enrolled.
+     *
+     * Only AVAILABLE and non-expired recordings are returned — status is filtered server-side.
+     * The frontend receives a simplified response with no bunnyVideoId or zoomDownloadUrl.
+     */
+    @Transactional(readOnly = true)
+    public List<StudentRecordingResponse> getAvailableRecordingsForBatch(UUID batchId, User student) {
+        Batch batch = batchRepository.findById(batchId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "Batch not found"));
+
+        boolean enrolled = batchEnrollmentRepository.existsByBatchAndStudentAndIsActiveTrue(batch, student);
+        if (!enrolled) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN, "You are not enrolled in this batch");
+        }
+
+        return recordingRepository.findByBatchAndStatusOrderByCreatedAtDesc(batch, RecordingStatus.AVAILABLE)
+                .stream()
+                .filter(r -> r.getExpiresAt() == null || r.getExpiresAt().isAfter(LocalDateTime.now()))
+                .map(r -> StudentRecordingResponse.builder()
+                        .id(r.getId())
+                        .title(r.getTitle())
+                        .recordedDate(r.getCreatedAt() != null ? r.getCreatedAt().toLocalDate() : null)
+                        .durationMins(r.getDurationMins())
+                        .status(r.getStatus())
+                        .build())
+                .toList();
+    }
+
+    // =========================================================================
+    // STUDENT — get signed play URL
+    // =========================================================================
+
+    /**
+     * Generates a signed, time-limited Bunny.net play URL for a specific recording.
+     *
+     * Verifies the student is enrolled in the recording's batch.
+     * Returns 400 if recording is still PROCESSING, 403 if expired or not enrolled.
+     */
+    @Transactional(readOnly = true)
+    public PlayUrlResponse generatePlayUrl(UUID recordingId, User student) {
+        Recording recording = recordingRepository.findById(recordingId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "Recording not found"));
+
+        // Enrollment check
+        boolean enrolled = batchEnrollmentRepository
+                .existsByBatchAndStudentAndIsActiveTrue(recording.getBatch(), student);
+        if (!enrolled) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN, "You are not enrolled in this batch");
+        }
+
+        // Status checks
+        if (recording.getStatus() == RecordingStatus.PROCESSING ||
+                recording.getStatus() == RecordingStatus.FAILED) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Recording is not yet available (still processing)");
+        }
+        if (recording.getStatus() == RecordingStatus.EXPIRED) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN, "Recording has expired");
+        }
+        if (recording.getExpiresAt() != null && recording.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN, "Recording has expired");
+        }
+
+        if (recording.getBunnyVideoId() == null) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Recording video ID is missing — contact support");
+        }
+
+        String playUrl = buildSignedBunnyUrl(recording.getBunnyVideoId());
+        return PlayUrlResponse.builder()
+                .playUrl(playUrl)
+                .expiresIn(10800)
+                .build();
+    }
+
+    // =========================================================================
+    // MENTOR — list recordings
+    // =========================================================================
+
+    public List<RecordingResponse> getMentorRecordings(UUID mentorId) {
+        return recordingRepository.findByMentorId(mentorId)
+                .stream()
+                .map(this::toMentorRecordingResponse)
+                .toList();
+    }
+
+    public List<RecordingResponse> getMentorBatchRecordings(UUID batchId, UUID mentorId) {
+        Batch batch = batchRepository.findById(batchId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "Batch not found"));
+
+        return recordingRepository.findByBatchOrderByCreatedAtDesc(batch)
+                .stream()
+                .map(this::toMentorRecordingResponse)
+                .toList();
+    }
+
+    private RecordingResponse toMentorRecordingResponse(Recording r) {
+        String courseName = null;
+        try {
+            courseName = r.getBatch().getCourse() != null
+                    ? r.getBatch().getCourse().getTitle() : null;
+        } catch (Exception ignored) { /* lazy load may fail — safe to skip */ }
+
+        return RecordingResponse.builder()
+                .id(r.getId())
+                .title(r.getTitle())
+                .batchId(r.getBatch().getId())
+                .batchName(r.getBatch().getName())
+                .courseName(courseName)
+                .status(r.getStatus())
+                .durationMins(r.getDurationMins())
+                .recordedDate(r.getCreatedAt() != null ? r.getCreatedAt().toLocalDate() : null)
+                .createdAt(r.getCreatedAt())
+                .build();
+    }
+
+    // =========================================================================
+    // Bunny signed URL generation (Token Authentication)
+    // =========================================================================
+
+    /**
+     * Generates a signed Bunny.net Stream play URL valid for 3 hours.
+     *
+     * Algorithm:
+     *   message = bunnyVideoId + expiryTimestamp
+     *   token   = Base64URL(HMAC-SHA256(key=bunnyTokenKey, message))
+     *   url     = https://{cdn-hostname}/{bunnyVideoId}/play?token={token}&expires={expiry}
+     */
+    private String buildSignedBunnyUrl(String bunnyVideoId) {
+        try {
+            long expires = Instant.now().plusSeconds(10800).getEpochSecond();
+
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(bunnyTokenKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] hash = mac.doFinal((bunnyVideoId + expires).getBytes(StandardCharsets.UTF_8));
+            String token = Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+
+            return "https://" + bunnyCdnHostname + "/" + bunnyVideoId + "/play"
+                    + "?token=" + token + "&expires=" + expires;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to generate signed play URL", e);
         }
     }
 

@@ -14,6 +14,7 @@ import com.fmt.fmt_backend.service.BatchService;
 import com.fmt.fmt_backend.service.CourseService;
 import com.fmt.fmt_backend.service.EnquiryService;
 import com.fmt.fmt_backend.service.MeetingService;
+import com.fmt.fmt_backend.service.RecordingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -36,6 +37,7 @@ public class MentorController {
     private final CourseService courseService;
     private final BatchService batchService;
     private final MeetingService meetingService;
+    private final RecordingService recordingService;
     private final CourseRepository courseRepository;
     private final BatchRepository batchRepository;
     private final BatchEnrollmentRepository enrollmentRepository;
@@ -242,6 +244,28 @@ public class MentorController {
             @Valid @RequestBody BatchStatusRequest request) {
         BatchResponse batch = batchService.updateBatchStatus(batchId, request.getStatus(), currentMentor().getId());
         return ResponseEntity.ok(ApiResponse.success("Batch status updated", batch));
+    }
+
+    // ---------------------------------------------------------------
+    // Recordings
+    // ---------------------------------------------------------------
+
+    @GetMapping("/recordings")
+    @Operation(summary = "List all recordings for my classes",
+               description = "Returns all recordings (all statuses) for classes conducted by the logged-in mentor.")
+    public ResponseEntity<ApiResponse<List<RecordingResponse>>> getRecordings() {
+        List<RecordingResponse> recordings = recordingService.getMentorRecordings(currentMentor().getId());
+        return ResponseEntity.ok(ApiResponse.success("Recordings fetched", recordings));
+    }
+
+    @GetMapping("/batches/{batchId}/recordings")
+    @Operation(summary = "List recordings for a specific batch",
+               description = "Returns all recordings (all statuses) for classes in the specified batch.")
+    public ResponseEntity<ApiResponse<List<RecordingResponse>>> getBatchRecordings(
+            @PathVariable UUID batchId) {
+        List<RecordingResponse> recordings =
+                recordingService.getMentorBatchRecordings(batchId, currentMentor().getId());
+        return ResponseEntity.ok(ApiResponse.success("Recordings fetched", recordings));
     }
 
     // ---------------------------------------------------------------

@@ -4,6 +4,7 @@ import com.fmt.fmt_backend.enums.RecordingStatus;
 import lombok.Builder;
 import lombok.Data;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -14,8 +15,10 @@ public class RecordingResponse {
     private String title;
     private UUID batchId;
     private String batchName;
+    private String courseName;
     private RecordingStatus status;
     private Integer durationMins;
+    private LocalDate recordedDate;
     private LocalDateTime createdAt;
     // Signed play URL returned only from /play endpoint — never stored here
 }

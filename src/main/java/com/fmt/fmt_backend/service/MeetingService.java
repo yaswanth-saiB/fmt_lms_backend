@@ -12,7 +12,6 @@ import com.fmt.fmt_backend.repository.MeetingRepository;
 import com.fmt.fmt_backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -198,11 +197,13 @@ public class MeetingService {
     public MeetingResponse adminEndMeeting(UUID meetingId) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new RuntimeException("Meeting not found"));
-        if (meeting.getStatus() != MeetingStatus.LIVE) {
-            throw new RuntimeException("Only LIVE meetings can be ended. Current status: " + meeting.getStatus());
+        // Admin can force-end LIVE or UPCOMING (e.g. meeting stuck because webhook never fired)
+        if (meeting.getStatus() != MeetingStatus.LIVE && meeting.getStatus() != MeetingStatus.UPCOMING) {
+            throw new RuntimeException("Only LIVE or UPCOMING meetings can be ended. Current status: " + meeting.getStatus());
         }
         meeting.setStatus(MeetingStatus.ENDED);
         meeting.setEndedAt(LocalDateTime.now());
+        log.info("Meeting {} force-ended by admin (was {})", meetingId, meeting.getStatus());
         return toMentorResponse(meetingRepository.save(meeting));
     }
 
@@ -247,23 +248,6 @@ public class MeetingService {
             meeting.setTopic(request.getTopic());
         }
         return toMentorResponse(meetingRepository.save(meeting));
-    }
-
-    // ---------------------------------------------------------------
-    // Scheduled cleanup
-    // ---------------------------------------------------------------
-
-    /**
-     * Runs every minute. Auto-marks meetings as ENDED when their scheduled window has passed.
-     * e.g. scheduledAt=10:00, durationMins=120 → auto-ends at 12:00 if still UPCOMING or LIVE.
-     */
-    @Scheduled(fixedRate = 60_000)
-    @Transactional
-    public void autoEndExpiredMeetings() {
-        int updated = meetingRepository.autoEndExpiredMeetings();
-        if (updated > 0) {
-            log.info("Auto-ended {} expired meeting(s)", updated);
-        }
     }
 
     // ---------------------------------------------------------------

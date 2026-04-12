@@ -1,6 +1,8 @@
 package com.fmt.fmt_backend.controller;
 
 import com.fmt.fmt_backend.entity.Recording;
+import com.fmt.fmt_backend.enums.MeetingStatus;
+import com.fmt.fmt_backend.repository.MeetingRepository;
 import com.fmt.fmt_backend.service.RecordingService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,6 +30,7 @@ import java.util.List;
 public class ZoomWebhookController {
 
     private final RecordingService recordingService;
+    private final MeetingRepository meetingRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -70,10 +73,11 @@ public class ZoomWebhookController {
             }
 
             // ---- Route by event type ----
-            if ("recording.completed".equals(event)) {
-                handleRecordingCompleted(root);
-            } else {
-                log.debug("Zoom webhook: unhandled event type '{}' — ignored", event);
+            switch (event) {
+                case "recording.completed" -> handleRecordingCompleted(root);
+                case "meeting.started"     -> handleMeetingStarted(root);
+                case "meeting.ended"       -> handleMeetingEnded(root);
+                default -> log.debug("Zoom webhook: unhandled event type '{}' — ignored", event);
             }
 
         } catch (Exception e) {
@@ -172,5 +176,39 @@ public class ZoomWebhookController {
         recordingService.processRecordingAsync(saved.getId());
 
         log.info("Recording {} queued for async processing", saved.getId());
+    }
+
+    private void handleMeetingStarted(JsonNode root) {
+        try {
+            String zoomMeetingId = root.path("payload").path("object").path("id").asText();
+            meetingRepository.findByZoomMeetingId(zoomMeetingId).ifPresentOrElse(
+                    meeting -> {
+                        meeting.setStatus(MeetingStatus.LIVE);
+                        meeting.setStartedAt(java.time.LocalDateTime.now());
+                        meetingRepository.save(meeting);
+                        log.info("Meeting {} marked LIVE via Zoom webhook", zoomMeetingId);
+                    },
+                    () -> log.warn("meeting.started webhook: no meeting found for zoomMeetingId={} — ignored", zoomMeetingId)
+            );
+        } catch (Exception e) {
+            log.error("Error handling meeting.started: {}", e.getMessage());
+        }
+    }
+
+    private void handleMeetingEnded(JsonNode root) {
+        try {
+            String zoomMeetingId = root.path("payload").path("object").path("id").asText();
+            meetingRepository.findByZoomMeetingId(zoomMeetingId).ifPresentOrElse(
+                    meeting -> {
+                        meeting.setStatus(MeetingStatus.ENDED);
+                        meeting.setEndedAt(java.time.LocalDateTime.now());
+                        meetingRepository.save(meeting);
+                        log.info("Meeting {} marked ENDED via Zoom webhook", zoomMeetingId);
+                    },
+                    () -> log.warn("meeting.ended webhook: no meeting found for zoomMeetingId={} — ignored", zoomMeetingId)
+            );
+        } catch (Exception e) {
+            log.error("Error handling meeting.ended: {}", e.getMessage());
+        }
     }
 }
