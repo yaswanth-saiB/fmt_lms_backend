@@ -76,8 +76,9 @@ public class SecurityConfig {
                         // Testing
                         .requestMatchers("/api/test/**").permitAll()
                         .requestMatchers("/api/public/**").permitAll()
-                        // Zoom webhook — called by Zoom, no auth token
+                        // Webhooks — called by Zoom and Bunny, no auth token
                         .requestMatchers("/api/webhook/zoom").permitAll()
+                        .requestMatchers("/api/webhook/bunny").permitAll()
 
                         // Protected — require valid access token
                         .requestMatchers("/api/auth/logout").authenticated()

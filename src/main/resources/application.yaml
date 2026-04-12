@@ -224,6 +224,17 @@ zoom:
   account-id: ${ZOOM_ACCOUNT_ID}
   client-id: ${ZOOM_CLIENT_ID}
   client-secret: ${ZOOM_CLIENT_SECRET}
+  webhook-secret: ${ZOOM_WEBHOOK_SECRET}  # from Zoom Marketplace → Event Subscriptions → Secret Token
+
+# ============================================
+# BUNNY.NET STREAM CONFIGURATION
+# ============================================
+bunny:
+  library-id: ${BUNNY_LIBRARY_ID:635843}
+  api-key: ${BUNNY_API_KEY}
+  cdn-hostname: ${BUNNY_CDN_HOSTNAME}          # e.g. vz-xxxxxxxx.b-cdn.net
+  token-key: ${BUNNY_TOKEN_KEY}                 # CDN Zone → Token Authentication
+  # No webhook secret — Bunny sends no auth header. Validation uses library-id from payload.
 
 # ============================================
 # ADMIN SEED (first-time bootstrap)

@@ -32,8 +32,8 @@ public class Recording extends BaseEntity {
     private String zoomDownloadUrl;
 
     // SECURITY: Never expose directly — always generate signed URL
-    @Column(name = "cloudflare_video_id")
-    private String cloudflareVideoId;
+    @Column(name = "bunny_video_id")
+    private String bunnyVideoId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
