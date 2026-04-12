@@ -46,7 +46,7 @@ public class SecurityConfig {
                 // Exception handling - remove custom entry point for now
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, authException) -> {
-                            log.error("🔐 Authentication failed: {}", authException.getMessage());
+                            log.warn("🔐 Authentication failed: {} {}", request.getMethod(), request.getRequestURI());
                             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                             response.setContentType("application/json");
                             response.getWriter().write("{\"success\": false, \"message\": \"Authentication required\"}");

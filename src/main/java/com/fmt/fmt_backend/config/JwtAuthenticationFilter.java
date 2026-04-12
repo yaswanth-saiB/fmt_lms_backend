@@ -98,17 +98,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                     // 2. Validate session is still active in DB (catches device revocation in real-time)
                     UUID sessionId = jwtService.extractSessionId(jwt);
-                    if (sessionId != null) {
-                        boolean sessionActive = userSessionRepository
-                                .findBySessionIdAndActiveTrue(sessionId)
-                                .isPresent();
-                        if (!sessionActive) {
-                            log.warn("🚫 Rejected token — session revoked: {} user: {}", sessionId, userEmail);
-                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                            response.setContentType("application/json");
-                            response.getWriter().write("{\"success\":false,\"message\":\"Session expired. Please log in again.\"}");
-                            return;
-                        }
+                    if (sessionId == null) {
+                        // Token missing sessionId = old/invalid format — reject
+                        log.warn("🚫 Rejected token — missing sessionId claim for user: {}", userEmail);
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                        response.getWriter().write("{\"success\":false,\"message\":\"Session expired. Please log in again.\"}");
+                        return;
+                    }
+                    boolean sessionActive = userSessionRepository
+                            .findBySessionIdAndActiveTrue(sessionId)
+                            .isPresent();
+                    if (!sessionActive) {
+                        log.warn("🚫 Rejected token — session revoked: {} user: {}", sessionId, userEmail);
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                        response.getWriter().write("{\"success\":false,\"message\":\"Session expired. Please log in again.\"}");
+                        return;
                     }
 
                     log.debug("🔐 Token + session validated for user: {}", userEmail);
@@ -122,7 +128,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authToken);
 
-                    log.info("✅ Authenticated user: {} for path: {}", userEmail, requestPath);
+                    log.debug("✅ Authenticated user: {} for path: {}", userEmail, requestPath);
                 } else {
                     log.warn("❌ Token invalid for user: {}", userEmail);
                 }

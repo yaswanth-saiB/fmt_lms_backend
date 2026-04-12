@@ -65,7 +65,7 @@ public class DeviceController {
     @PostMapping("/check-limit")
     @Operation(
             summary = "Check Device Limit",
-            description = "Check if user has exceeded device limit (max 2 devices)"
+            description = "Check if user has exceeded device limit (max 1 device — only one active session allowed)"
     )
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> checkDeviceLimit() {
         log.info("🔍 Checking device limit for current user");

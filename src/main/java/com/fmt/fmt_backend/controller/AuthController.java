@@ -59,19 +59,11 @@ public class AuthController {
         return ResponseEntity.status(response.isSuccess() ? 200 : 400).body(response);
     }
 
-    @PostMapping("/signup/send-mobile-otp")
-    @Operation(summary = "Step 3: Send Mobile OTP")
-    @SecurityRequirements({})
-    public ResponseEntity<ApiResponse<String>> sendMobileOtp(
-            @RequestParam String email,
-            @Parameter(example = "+919876543210") @RequestParam String phoneNumber) {
-        ApiResponse<String> response = authService.sendMobileOtp(email, phoneNumber);
-        return ResponseEntity.status(response.isSuccess() ? 200 : 400).body(response);
-    }
+    // Step 3 (send-mobile-otp) removed — SMS service disabled. Signup is now 2-step: email OTP only.
 
     @PostMapping("/signup/verify-mobile-otp")
-    @Operation(summary = "Step 4: Verify Mobile OTP and Complete Registration",
-            description = "Creates account, sets auth cookies, and returns user info")
+    @Operation(summary = "Step 3: Complete Registration",
+            description = "Creates account after email OTP verification, sets auth cookies, and returns user info. Mobile OTP no longer required.")
     @ApiResponses(value = {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200",
                     description = "Registration successful — auth cookies set",

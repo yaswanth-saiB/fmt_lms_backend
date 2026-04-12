@@ -15,12 +15,14 @@ public class MeetingResponse {
     private String topic;
     private UUID batchId;
     private String batchName;
+    private UUID mentorId;
+    private String mentorName;
     private MeetingStatus status;
     private LocalDateTime scheduledAt;
     private Integer durationMins;
     private LocalDateTime createdAt;
 
-    // Only included for MENTOR — never send to students
+    // Only included for MENTOR/ADMIN — never send to students
     private String startUrl;
 
     // Included for enrolled students and mentor

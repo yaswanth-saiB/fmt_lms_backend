@@ -25,6 +25,7 @@ import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -58,15 +59,20 @@ public class TokenService {
         log.info("🔑 Generating token pair for user: {}", user.getEmail());
 
         String deviceFingerprint = deviceService.generateDeviceFingerprint(request);
+
+        // Check BEFORE registerDevice so we can report which session will be terminated
+        Optional<String> kickedDeviceName = deviceService.peekKickedDeviceName(user, deviceFingerprint);
+
         DeviceEntity device = deviceService.registerDevice(user, deviceFingerprint, request);
 
         // Create a new session — sessionId is the identity embedded in the JWT
+        // Session lifetime matches the refresh token (14d) — not the access token (6h)
         UUID sessionId = UUID.randomUUID();
         UserSession session = UserSession.builder()
                 .sessionId(sessionId)
                 .user(user)
                 .device(device)
-                .expiresAt(LocalDateTime.now().plusSeconds(accessTokenExpiration / 1000))
+                .expiresAt(LocalDateTime.now().plusSeconds(refreshTokenExpiration / 1000))
                 .ipAddress(extractClientIp(request))
                 .active(true)
                 .build();
@@ -82,6 +88,10 @@ public class TokenService {
         tokens.put("expiresIn", accessTokenExpiration / 1000);
         tokens.put("tokenType", "Bearer");
         tokens.put("deviceId", device.getId().toString());
+
+        // Inform the frontend if a previous session was terminated (single-device enforcement)
+        tokens.put("previousSessionTerminated", kickedDeviceName.isPresent());
+        kickedDeviceName.ifPresent(name -> tokens.put("previousDeviceName", name));
 
         return tokens;
     }
@@ -157,6 +167,17 @@ public class TokenService {
         DeviceEntity device = refreshToken.getDevice();
         UUID sessionId = refreshToken.getSessionId(); // keep the same sessionId
 
+        // Check the session is still active — catches single-device kicks and admin revocations.
+        // Without this check, a kicked device could get a fresh access token (which would then
+        // fail on the very next request anyway, but this gives a cleaner error immediately).
+        if (sessionId != null) {
+            boolean sessionActive = userSessionRepository.findBySessionIdAndActiveTrue(sessionId).isPresent();
+            if (!sessionActive) {
+                log.warn("❌ Refresh denied — session revoked: {} user: {}", sessionId, user.getEmail());
+                throw new RuntimeException("Session has been terminated. Please log in again.");
+            }
+        }
+
         device.setLastActiveAt(LocalDateTime.now());
         deviceRepository.save(device);
 
@@ -195,6 +216,15 @@ public class TokenService {
 
         UUID sessionId = oldToken.getSessionId(); // preserve session
 
+        // Check session is still active before rotating
+        if (sessionId != null) {
+            boolean sessionActive = userSessionRepository.findBySessionIdAndActiveTrue(sessionId).isPresent();
+            if (!sessionActive) {
+                log.warn("❌ Token rotation denied — session revoked: {}", sessionId);
+                throw new RuntimeException("Session has been terminated. Please log in again.");
+            }
+        }
+
         oldToken.setRevoked(true);
         oldToken.setRevokedAt(LocalDateTime.now());
         oldToken.setRevokedReason("rotated");
@@ -208,6 +238,14 @@ public class TokenService {
 
         String newAccessToken = generateAccessToken(user, device, sessionId);
         String newRefreshToken = generateRefreshToken(user, device, sessionId);
+
+        // Extend session expiry to match the new refresh token (sliding window)
+        if (sessionId != null) {
+            userSessionRepository.findBySessionIdAndActiveTrue(sessionId).ifPresent(session -> {
+                session.setExpiresAt(LocalDateTime.now().plusSeconds(refreshTokenExpiration / 1000));
+                userSessionRepository.save(session);
+            });
+        }
 
         Map<String, Object> tokens = new HashMap<>();
         tokens.put("accessToken", newAccessToken);

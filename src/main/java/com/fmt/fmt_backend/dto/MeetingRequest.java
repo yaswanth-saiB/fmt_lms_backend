@@ -19,4 +19,7 @@ public class MeetingRequest {
     private Integer durationMins;
 
     private LocalDateTime scheduledAt;
+
+    /** Admin only — which mentor is conducting this class. Ignored when called from mentor API (JWT is used). */
+    private UUID mentorId;
 }

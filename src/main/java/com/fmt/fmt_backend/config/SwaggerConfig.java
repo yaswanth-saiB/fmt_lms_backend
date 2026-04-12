@@ -36,11 +36,11 @@ public class SwaggerConfig {
 
         return new OpenAPI()
                 .info(new Info()
-                        .title("Trading App API")
+                        .title("First Million Trade API")
                         .description("Complete Authentication and User Management API")
                         .version("1.0.0")
                         .contact(new Contact()
-                                .name("Trading App Team")
+                                .name("First Million Trade Team")
                                 .email("help@firstmilliontrade.com")
                                 .url("https://tradingapp.com"))
                         .license(new License()

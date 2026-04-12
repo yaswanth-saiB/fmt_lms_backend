@@ -1,6 +1,7 @@
 package com.fmt.fmt_backend.controller;
 
 import com.fmt.fmt_backend.dto.*;
+import com.fmt.fmt_backend.dto.RescheduleMeetingRequest;
 import com.fmt.fmt_backend.entity.Enquiry;
 import com.fmt.fmt_backend.enums.BatchStatus;
 import com.fmt.fmt_backend.entity.User;
@@ -81,9 +82,9 @@ public class MentorController {
     // ---------------------------------------------------------------
 
     @GetMapping("/courses")
-    @Operation(summary = "List all my courses")
+    @Operation(summary = "List all courses — any mentor can view all courses")
     public ResponseEntity<ApiResponse<List<CourseResponse>>> getCourses() {
-        List<CourseResponse> courses = courseService.getMentorCourses(currentMentor().getId());
+        List<CourseResponse> courses = courseService.getAllActiveCourses();
         return ResponseEntity.ok(ApiResponse.success("Courses fetched", courses));
     }
 
@@ -102,9 +103,9 @@ public class MentorController {
     }
 
     @GetMapping("/courses/{courseId}/batches")
-    @Operation(summary = "Get all batches for a specific course")
+    @Operation(summary = "Get all batches for a specific course — any mentor can view")
     public ResponseEntity<ApiResponse<List<BatchResponse>>> getCourseBatches(@PathVariable UUID courseId) {
-        List<BatchResponse> batches = batchService.getBatchesForCourse(courseId, currentMentor().getId());
+        List<BatchResponse> batches = batchService.getBatchesForCourse(courseId);
         return ResponseEntity.ok(ApiResponse.success("Batches fetched", batches));
     }
 
@@ -113,9 +114,9 @@ public class MentorController {
     // ---------------------------------------------------------------
 
     @GetMapping("/batches")
-    @Operation(summary = "List all my batches")
+    @Operation(summary = "List all batches — any mentor can view all batches to select for a class")
     public ResponseEntity<ApiResponse<List<BatchResponse>>> getBatches() {
-        List<BatchResponse> batches = batchService.getMentorBatches(currentMentor().getId());
+        List<BatchResponse> batches = batchService.getAllBatches();
         return ResponseEntity.ok(ApiResponse.success("Batches fetched", batches));
     }
 
@@ -138,9 +139,11 @@ public class MentorController {
     // ---------------------------------------------------------------
 
     @GetMapping("/classes")
-    @Operation(summary = "List all my class sessions with Zoom links")
-    public ResponseEntity<ApiResponse<List<MeetingResponse>>> getClasses() {
-        List<MeetingResponse> meetings = meetingService.getMentorMeetings(currentMentor().getId());
+    @Operation(summary = "List all my class sessions with Zoom links",
+            description = "Optional filter: ?status=UPCOMING,LIVE,ENDED,CANCELLED (comma-separated). Omit for all.")
+    public ResponseEntity<ApiResponse<List<MeetingResponse>>> getClasses(
+            @RequestParam(required = false) List<com.fmt.fmt_backend.enums.MeetingStatus> status) {
+        List<MeetingResponse> meetings = meetingService.getMentorMeetings(currentMentor().getId(), status);
         return ResponseEntity.ok(ApiResponse.success("Classes fetched", meetings));
     }
 
@@ -153,11 +156,47 @@ public class MentorController {
     }
 
     @GetMapping("/batches/{batchId}/classes")
-    @Operation(summary = "Get all classes for a specific batch")
+    @Operation(summary = "Get all classes for a specific batch",
+            description = "Optional filter: ?status=UPCOMING,LIVE,ENDED,CANCELLED (comma-separated). Omit for all.")
     public ResponseEntity<ApiResponse<List<MeetingResponse>>> getBatchClasses(
-            @PathVariable UUID batchId) {
-        List<MeetingResponse> meetings = meetingService.getBatchMeetingsForMentor(batchId, currentMentor().getId());
+            @PathVariable UUID batchId,
+            @RequestParam(required = false) List<com.fmt.fmt_backend.enums.MeetingStatus> status) {
+        List<MeetingResponse> meetings = meetingService.getBatchMeetingsForMentor(batchId, currentMentor().getId(), status);
         return ResponseEntity.ok(ApiResponse.success("Classes fetched", meetings));
+    }
+
+    @PutMapping("/classes/{classId}/start")
+    @Operation(summary = "Mark class as LIVE — call this when you click the Zoom start link",
+            description = "Transitions UPCOMING → LIVE. Only the conducting mentor can start their own class.")
+    public ResponseEntity<ApiResponse<MeetingResponse>> startClass(@PathVariable UUID classId) {
+        MeetingResponse meeting = meetingService.startMeeting(classId, currentMentor().getId());
+        return ResponseEntity.ok(ApiResponse.success("Class is now LIVE", meeting));
+    }
+
+    @PutMapping("/classes/{classId}/end")
+    @Operation(summary = "Mark class as ENDED — call this when the session finishes",
+            description = "Transitions LIVE → ENDED. Only the conducting mentor can end their own class.")
+    public ResponseEntity<ApiResponse<MeetingResponse>> endClass(@PathVariable UUID classId) {
+        MeetingResponse meeting = meetingService.endMeeting(classId, currentMentor().getId());
+        return ResponseEntity.ok(ApiResponse.success("Class marked as ENDED", meeting));
+    }
+
+    @DeleteMapping("/classes/{classId}")
+    @Operation(summary = "Cancel a class — only allowed for UPCOMING classes",
+            description = "Soft-cancels the class (sets CANCELLED). Cannot cancel a LIVE or ENDED class.")
+    public ResponseEntity<ApiResponse<Void>> cancelClass(@PathVariable UUID classId) {
+        meetingService.cancelMeeting(classId, currentMentor().getId());
+        return ResponseEntity.ok(ApiResponse.success("Class cancelled", null));
+    }
+
+    @PutMapping("/classes/{classId}/reschedule")
+    @Operation(summary = "Reschedule a class — only allowed for UPCOMING classes",
+            description = "Updates scheduledAt, durationMins (optional), topic (optional). Validates no time conflict.")
+    public ResponseEntity<ApiResponse<MeetingResponse>> rescheduleClass(
+            @PathVariable UUID classId,
+            @Valid @RequestBody RescheduleMeetingRequest request) {
+        MeetingResponse meeting = meetingService.rescheduleMeeting(classId, request, currentMentor().getId());
+        return ResponseEntity.ok(ApiResponse.success("Class rescheduled", meeting));
     }
 
     // ---------------------------------------------------------------

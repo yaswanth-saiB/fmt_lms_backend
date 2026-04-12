@@ -40,7 +40,6 @@ public class AdminService {
     private final CourseService courseService;
     private final OtpService otpService;
     private final EmailService emailService;
-    private final SmsService smsService;
 
     // ---------------------------------------------------------------
     // Dashboard
@@ -325,15 +324,16 @@ public class AdminService {
     // ---------------------------------------------------------------
 
     public MeetingResponse adminCreateMeeting(MeetingRequest request) {
-        com.fmt.fmt_backend.entity.Batch batch = batchRepository.findById(request.getBatchId())
-                .orElseThrow(() -> new RuntimeException("Batch not found"));
-        return meetingService.createMeeting(request, batch.getCourse().getMentor().getId());
+        // Admin must specify mentorId in the request to indicate who is conducting the class
+        if (request.getMentorId() == null) {
+            throw new RuntimeException("mentorId is required — specify which mentor will conduct this class");
+        }
+        return meetingService.createMeeting(request, request.getMentorId());
     }
 
     public List<MeetingResponse> adminGetBatchMeetings(UUID batchId) {
-        com.fmt.fmt_backend.entity.Batch batch = batchRepository.findById(batchId)
-                .orElseThrow(() -> new RuntimeException("Batch not found"));
-        return meetingService.getBatchMeetingsForMentor(batchId, batch.getCourse().getMentor().getId());
+        // Any mentor can see any batch's meetings — no ownership needed
+        return meetingService.getBatchMeetingsForMentor(batchId, null);
     }
 
     // ---------------------------------------------------------------
@@ -349,12 +349,6 @@ public class AdminService {
         String emailOtp = otpService.generateOtp(email, com.fmt.fmt_backend.entity.OtpEntity.OtpType.EMAIL_VERIFICATION);
         emailService.sendOtpEmail(email, emailOtp, 10);
         log.info("Admin registration OTP sent to email: {}", email);
-
-        if (request.getPhoneNumber() != null && !request.getPhoneNumber().isBlank()) {
-            String mobileOtp = otpService.generateOtp(request.getPhoneNumber(), com.fmt.fmt_backend.entity.OtpEntity.OtpType.MOBILE_VERIFICATION);
-            smsService.sendOtpSms(request.getPhoneNumber(), mobileOtp);
-            log.info("Admin registration OTP sent to mobile: {}", request.getPhoneNumber());
-        }
     }
 
     @Transactional
@@ -368,18 +362,7 @@ public class AdminService {
             throw new RuntimeException("Invalid or expired email OTP");
         }
 
-        // Verify mobile OTP if phone was provided
         boolean hasMobile = request.getPhoneNumber() != null && !request.getPhoneNumber().isBlank();
-        if (hasMobile) {
-            if (request.getMobileOtp() == null || request.getMobileOtp().isBlank()) {
-                throw new RuntimeException("Mobile OTP is required when phone number is provided");
-            }
-            boolean mobileValid = otpService.verifyOtp(request.getPhoneNumber(), request.getMobileOtp(),
-                    com.fmt.fmt_backend.entity.OtpEntity.OtpType.MOBILE_VERIFICATION);
-            if (!mobileValid) {
-                throw new RuntimeException("Invalid or expired mobile OTP");
-            }
-        }
 
         // Race condition guard
         if (userRepository.existsByEmail(email)) {

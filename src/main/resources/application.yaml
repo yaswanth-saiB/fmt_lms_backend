@@ -114,33 +114,33 @@ sendgrid:
   archive:
     enabled: ${SENDGRID_ARCHIVE_ENABLED:true}
     email: ${ARCHIVE_EMAIL:archive@firstmilliontrade.com}
-    name: ${ARCHIVE_NAME:FMT Archive}
-  
+    name: ${ARCHIVE_NAME:First Million Trade Archive}
+
   # Email senders configuration
   senders:
     otp:
       email: ${OTP_FROM_EMAIL:noreply-otp@firstmilliontrade.com}
-      name: ${OTP_FROM_NAME:FMT OTP}
+      name: ${OTP_FROM_NAME:First Million Trade}
       bcc-archive: ${OTP_BCC_ARCHIVE:false}
-    
+
     welcome:
       email: ${WELCOME_FROM_EMAIL:noreply-info@firstmilliontrade.com}
-      name: ${WELCOME_FROM_NAME:FMT Info}
+      name: ${WELCOME_FROM_NAME:First Million Trade}
       bcc-archive: ${WELCOME_BCC_ARCHIVE:true}
-    
+
     promo:
       email: ${PROMO_FROM_EMAIL:noreply-info@firstmilliontrade.com}
-      name: ${PROMO_FROM_NAME:FMT Updates}
+      name: ${PROMO_FROM_NAME:First Million Trade}
       bcc-archive: ${PROMO_BCC_ARCHIVE:true}
-    
+
     support:
       email: ${SUPPORT_FROM_EMAIL:help@firstmilliontrade.com}
-      name: ${SUPPORT_FROM_NAME:FMT Support}
+      name: ${SUPPORT_FROM_NAME:First Million Trade Support}
       bcc-archive: ${SUPPORT_BCC_ARCHIVE:false}
-    
+
     admin:
       email: ${ADMIN_FROM_EMAIL:admin@firstmilliontrade.com}
-      name: ${ADMIN_FROM_NAME:FMT Admin}
+      name: ${ADMIN_FROM_NAME:First Million Trade Admin}
       bcc-archive: ${ADMIN_BCC_ARCHIVE:true}
 
 
@@ -172,7 +172,7 @@ otp:
 # DEVICE MANAGEMENT
 # ============================================
 device:
-  max-sessions-per-user: 2
+  max-sessions-per-user: 1
   max-streaming-sessions: 1
   inactive-days: 30
 
@@ -233,7 +233,7 @@ seed:
     email: ${ADMIN_SEED_EMAIL:admin@firstmilliontrade.com}
     password: ${ADMIN_SEED_PASSWORD:Admin@1234}
     first-name: ${ADMIN_SEED_FIRST_NAME:Admin}
-    last-name: ${ADMIN_SEED_LAST_NAME:FMT}
+    last-name: ${ADMIN_SEED_LAST_NAME:First Million Trade}
 
 # ============================================
 # LOGGING

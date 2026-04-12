@@ -36,10 +36,6 @@ public class BatchService {
         Course course = courseRepository.findById(request.getCourseId())
                 .orElseThrow(() -> new RuntimeException("Course not found"));
 
-        if (!course.getMentor().getId().equals(mentorId)) {
-            throw new RuntimeException("You can only create batches for your own courses");
-        }
-
         Batch batch = Batch.builder()
                 .name(request.getName())
                 .course(course)
@@ -59,20 +55,21 @@ public class BatchService {
                 .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
+    /** Returns all batches across all courses — used when any mentor needs to pick a batch for a class. */
+    public List<BatchResponse> getAllBatches() {
+        return batchRepository.findAllByOrderByCreatedAtDesc()
+                .stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
     public BatchResponse getBatch(UUID batchId) {
         Batch batch = batchRepository.findById(batchId)
                 .orElseThrow(() -> new RuntimeException("Batch not found"));
         return toResponse(batch);
     }
 
-    public List<BatchResponse> getBatchesForCourse(UUID courseId, UUID mentorId) {
+    public List<BatchResponse> getBatchesForCourse(UUID courseId) {
         Course course = courseRepository.findById(courseId)
                 .orElseThrow(() -> new RuntimeException("Course not found"));
-
-        if (!course.getMentor().getId().equals(mentorId)) {
-            throw new RuntimeException("Access denied");
-        }
-
         return batchRepository.findByCourseOrderByCreatedAtDesc(course)
                 .stream().map(this::toResponse).collect(Collectors.toList());
     }
@@ -81,10 +78,6 @@ public class BatchService {
     public void enrollStudent(EnrollmentRequest request, UUID requestingMentorId) {
         Batch batch = batchRepository.findById(request.getBatchId())
                 .orElseThrow(() -> new RuntimeException("Batch not found"));
-
-        if (!batch.getCourse().getMentor().getId().equals(requestingMentorId)) {
-            throw new RuntimeException("You can only enroll students in your own batches");
-        }
 
         User student = userRepository.findById(request.getStudentId())
                 .orElseThrow(() -> new RuntimeException("Student not found"));
@@ -156,10 +149,6 @@ public class BatchService {
         Batch batch = batchRepository.findById(batchId)
                 .orElseThrow(() -> new RuntimeException("Batch not found"));
 
-        if (!batch.getCourse().getMentor().getId().equals(requestingMentorId)) {
-            throw new RuntimeException("You can only manage students in your own batches");
-        }
-
         User student = userRepository.findById(studentId)
                 .orElseThrow(() -> new RuntimeException("Student not found"));
 
@@ -174,10 +163,6 @@ public class BatchService {
     public BatchResponse updateBatchStatus(UUID batchId, BatchStatus newStatus, UUID requestingMentorId) {
         Batch batch = batchRepository.findById(batchId)
                 .orElseThrow(() -> new RuntimeException("Batch not found"));
-
-        if (!batch.getCourse().getMentor().getId().equals(requestingMentorId)) {
-            throw new RuntimeException("You can only update your own batches");
-        }
 
         batch.setStatus(newStatus);
         Batch saved = batchRepository.save(batch);

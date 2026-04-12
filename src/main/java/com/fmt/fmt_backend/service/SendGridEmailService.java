@@ -119,7 +119,7 @@ public class SendGridEmailService {
     @Async
     public void sendPromotionalEmail(String to, String firstName, String campaign) {
         SenderInfo sender = senderMap.get(EmailType.PROMO);
-        String subject = "Trading App - " + campaign;
+        String subject = "First Million Trade - " + campaign;
         String htmlContent = buildPromoTemplate(firstName, campaign);
 
         sendEmail(to, subject, htmlContent, sender, EmailType.PROMO);
@@ -144,7 +144,7 @@ public class SendGridEmailService {
     @Async
     public void sendEnquiryNotification(Enquiry enquiry) {
         SenderInfo sender = senderMap.get(EmailType.ENQUIRY);
-        String subject = "📋 New Enquiry Received - Trading App";
+        String subject = "📋 New Enquiry Received - First Million Trade";
 
         String htmlContent = String.format("""
             <!DOCTYPE html>

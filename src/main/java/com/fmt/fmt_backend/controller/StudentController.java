@@ -76,10 +76,12 @@ public class StudentController {
     // ---------------------------------------------------------------
 
     @GetMapping("/batches/{batchId}/classes")
-    @Operation(summary = "Get all classes for a batch I'm enrolled in")
+    @Operation(summary = "Get all classes for a batch I'm enrolled in",
+            description = "Optional filter: ?status=UPCOMING,LIVE,ENDED,CANCELLED (comma-separated). Omit for all.")
     public ResponseEntity<ApiResponse<List<MeetingResponse>>> getBatchClasses(
-            @PathVariable UUID batchId) {
-        List<MeetingResponse> meetings = meetingService.getBatchMeetingsForStudent(batchId, currentStudent().getId());
+            @PathVariable UUID batchId,
+            @RequestParam(required = false) List<com.fmt.fmt_backend.enums.MeetingStatus> status) {
+        List<MeetingResponse> meetings = meetingService.getBatchMeetingsForStudent(batchId, currentStudent().getId(), status);
         return ResponseEntity.ok(ApiResponse.success("Classes fetched", meetings));
     }
 

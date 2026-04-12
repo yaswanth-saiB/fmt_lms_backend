@@ -56,7 +56,7 @@ public class EmailServiceSMTP {
         templateModel.put("expiryMinutes", expiryMinutes);
         templateModel.put("year", LocalDateTime.now().getYear());
 
-        String subject = "Your verification code for Trading App";
+        String subject = "Your verification code for First Million Trade";
         String htmlContent = buildTemplate("otp-email", templateModel);
         String plainContent = buildPlainOtp(otp, expiryMinutes);
 
@@ -85,7 +85,7 @@ public class EmailServiceSMTP {
         templateModel.put("frontendUrl", frontendUrl);
         templateModel.put("year", LocalDateTime.now().getYear());
 
-        String subject = "Welcome to Trading App, " + firstName + "!";
+        String subject = "Welcome to First Million Trade, " + firstName + "!";
         String htmlContent = buildTemplate("welcome-email", templateModel);
         String plainContent = buildPlainWelcome(firstName, role);
 
@@ -115,7 +115,7 @@ public class EmailServiceSMTP {
         templateModel.put("unsubscribeUrl", frontendUrl + "/unsubscribe?email=" + to);
         templateModel.put("year", LocalDateTime.now().getYear());
 
-        String subject = "Trading App - " + campaignName;
+        String subject = "First Million Trade - " + campaignName;
         String htmlContent = buildTemplate("promo-email", templateModel);
         String plainContent = buildPlainPromo(firstName, campaignName);
 
@@ -246,7 +246,7 @@ public class EmailServiceSMTP {
     private String buildFallbackHtml(Map<String, Object> model) {
         StringBuilder html = new StringBuilder();
         html.append("<!DOCTYPE html><html><body>");
-        html.append("<h2>Trading App</h2>");
+        html.append("<h2>First Million Trade</h2>");
         model.forEach((key, value) -> {
             html.append("<p><strong>").append(key).append(":</strong> ").append(value).append("</p>");
         });
@@ -263,19 +263,19 @@ public class EmailServiceSMTP {
             
             If you didn't request this, please ignore this email.
             
-            -- Trading App
+            -- First Million Trade
             """, otp, expiryMinutes);
     }
 
     private String buildPlainWelcome(String firstName, String role) {
         return String.format("""
-            Welcome to Trading App, %s!
+            Welcome to First Million Trade, %s!
             
             We're excited to have you onboard.
             
             Get started by exploring our courses and completing your profile.
             
-            -- Trading App
+            -- First Million Trade
             """, firstName);
     }
 
@@ -283,11 +283,11 @@ public class EmailServiceSMTP {
         return String.format("""
             Hello %s,
             
-            Check out what's new at Trading App: %s
+            Check out what's new at First Million Trade: %s
             
             To unsubscribe from future emails, visit: %s/unsubscribe
             
-            -- Trading App
+            -- First Million Trade
             """, firstName, campaign, frontendUrl);
     }
 

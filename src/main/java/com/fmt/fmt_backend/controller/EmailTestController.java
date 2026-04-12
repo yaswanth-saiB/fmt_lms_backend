@@ -44,7 +44,7 @@ public class EmailTestController {
 
             helper.setFrom(emailConfig.getOtp().getFrom());
             helper.setTo(to);
-            helper.setSubject("Your verification code for Trading App");
+            helper.setSubject("Your verification code for First Million Trade");
             helper.setText(plainContent, htmlContent); // Both versions
 
             otpMailSender.send(message);
@@ -80,7 +80,7 @@ public class EmailTestController {
 
             helper.setFrom(emailConfig.getInfo().getFrom());
             helper.setTo(to);
-            helper.setSubject("Welcome to Trading App, " + firstName + "!");
+            helper.setSubject("Welcome to First Million Trade, " + firstName + "!");
             helper.setText(plainContent, htmlContent);
 
             infoMailSender.send(message);
@@ -157,7 +157,7 @@ public class EmailTestController {
                         <p style="font-size: 14px; color: #666666;">If you didn't request this code, please ignore this email.</p>
                         <hr style="border: none; border-top: 1px solid #e9ecef; margin: 20px 0;">
                         <p style="font-size: 12px; color: #999999; text-align: center;">
-                            Trading App - Learn and Grow<br>
+                            First Million Trade - Learn and Grow<br>
                             This is an automated message, please do not reply.
                         </p>
                     </div>
@@ -182,7 +182,7 @@ public class EmailTestController {
             <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333333; margin: 0; padding: 0;">
                 <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
                     <div style="background-color: #ffffff; border-radius: 8px; padding: 30px; border: 1px solid #e9ecef;">
-                        <h2 style="color: #2c3e50; margin-top: 0;">Welcome to Trading App, %s!</h2>
+                        <h2 style="color: #2c3e50; margin-top: 0;">Welcome to First Million Trade, %s!</h2>
                         <p style="font-size: 16px;">We're excited to have you on board.</p>
                         <p style="font-size: 16px;">%s</p>
                         <div style="background-color: #f8f9fa; border-radius: 6px; padding: 20px; margin: 20px 0;">
@@ -195,7 +195,7 @@ public class EmailTestController {
                         </div>
                         <hr style="border: none; border-top: 1px solid #e9ecef; margin: 20px 0;">
                         <p style="font-size: 12px; color: #999999; text-align: center;">
-                            Trading App - %s<br>
+                            First Million Trade - %s<br>
                             <a href="%s/unsubscribe" style="color: #999999;">Unsubscribe</a> from promotional emails
                         </p>
                     </div>
@@ -242,13 +242,13 @@ public class EmailTestController {
             If you didn't request this code, please ignore this email.
             
             --
-            Trading App
+            First Million Trade
             """, otp, expiryMinutes);
     }
 
     private String createWelcomePlainTemplate(String firstName, String role) {
         return String.format("""
-            Welcome to Trading App, %s!
+            Welcome to First Million Trade, %s!
             
             We're excited to have you on board.
             
@@ -258,7 +258,7 @@ public class EmailTestController {
             - Set your learning goals
             
             --
-            Trading App
+            First Million Trade
             """, firstName);
     }
 

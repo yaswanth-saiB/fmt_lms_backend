@@ -33,7 +33,7 @@ public interface OtpRepository extends JpaRepository<OtpEntity, UUID> {
     @Query("DELETE FROM OtpEntity o WHERE o.expiresAt < :now")
     void deleteExpiredOtps(@Param("now") LocalDateTime now);
 
-    long countByIdentifierAndCreatedAtAfter(String identifier, LocalDateTime after);
+    long countByIdentifierAndTypeAndCreatedAtAfter(String identifier, OtpEntity.OtpType type, LocalDateTime after);
 
     @Query("SELECT COUNT(o) FROM OtpEntity o WHERE o.ipAddress = :ip AND o.createdAt > :since")
     long countByIpAddressAndCreatedAtAfter(@Param("ip") String ip, @Param("since") LocalDateTime since);

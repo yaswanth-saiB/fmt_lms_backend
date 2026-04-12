@@ -21,7 +21,7 @@ import java.time.LocalDateTime;
  *   ADMIN_SEED_EMAIL=admin@firstmilliontrade.com
  *   ADMIN_SEED_PASSWORD=YourStrongPass@123
  *   ADMIN_SEED_FIRST_NAME=Admin
- *   ADMIN_SEED_LAST_NAME=FMT
+ *   ADMIN_SEED_LAST_NAME=First Million Trade
  *
  * On every subsequent restart it checks first — if an ADMIN already exists,
  * it does nothing (safe to leave enabled permanently).
@@ -43,7 +43,7 @@ public class DataSeeder implements ApplicationRunner {
     @Value("${seed.admin.first-name:Admin}")
     private String adminFirstName;
 
-    @Value("${seed.admin.last-name:FMT}")
+    @Value("${seed.admin.last-name:First Million Trade}")
     private String adminLastName;
 
     @Override

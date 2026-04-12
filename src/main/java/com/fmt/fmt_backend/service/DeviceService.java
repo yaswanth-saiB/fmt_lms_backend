@@ -333,6 +333,38 @@ public class DeviceService {
         return deviceRepository.findByUserAndDeviceFingerprint(user, fp);
     }
 
+    /**
+     * Peek at which device (if any) will be auto-kicked when the given fingerprint
+     * logs in. Used to surface "previous session terminated" info in the login response
+     * BEFORE registerDevice actually kicks it.
+     *
+     * Returns empty if:
+     * - Same device is logging in again (no kick needed)
+     * - No active devices yet (first login)
+     * - Under the device limit (no kick needed)
+     */
+    public Optional<String> peekKickedDeviceName(User user, String newFingerprint) {
+        // Same device re-login — registerDevice just updates it, no kick
+        boolean sameDeviceActive = deviceRepository
+                .findByUserAndDeviceFingerprint(user, newFingerprint)
+                .map(DeviceEntity::isActive)
+                .orElse(false);
+        if (sameDeviceActive) {
+            return Optional.empty();
+        }
+
+        List<DeviceEntity> active = deviceRepository.findByUserAndIsActiveTrue(user);
+        if (active.size() < maxSessionsPerUser) {
+            return Optional.empty(); // still room, no kick needed
+        }
+
+        // The oldest device that isn't the new fingerprint will be kicked
+        return active.stream()
+                .filter(d -> !d.getDeviceFingerprint().equals(newFingerprint))
+                .min(Comparator.comparing(DeviceEntity::getLastActiveAt))
+                .map(DeviceEntity::getDeviceName);
+    }
+
     // =========================================================================
     // PRIVATE HELPERS
     // =========================================================================

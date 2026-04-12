@@ -37,7 +37,6 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final OtpService otpService;
     private final EmailService emailService;
-    private final SmsService smsService;
     private final DeviceService deviceService;
     private final TokenService tokenService;
     private final CustomUserDetailsService customUserDetailsService;
@@ -102,40 +101,14 @@ public class AuthService {
     }
 
     /**
-     * Step 3: Send mobile OTP for verification
+     * Step 3: Send mobile OTP — DISABLED (SMS service removed)
      */
-    @Transactional
     public ApiResponse<String> sendMobileOtp(String email, String phoneNumber) {
-        log.info("📱 Step 3 - Sending mobile OTP to: {}", phoneNumber);
-
-        // Check if user exists (email should be verified by now)
-        if (userRepository.existsByEmail(email)) {
-            return ApiResponse.error("Email already registered. Please login.");
-        }
-
-        try {
-            // Generate and send OTP via SMS
-            String otp = otpService.generateOtp(
-                    phoneNumber,
-                    OtpEntity.OtpType.MOBILE_VERIFICATION
-            );
-
-            // Send SMS (async)
-            smsService.sendOtpSms(phoneNumber, otp);
-
-            return ApiResponse.success(
-                    "OTP sent to your mobile. Please verify to complete registration.",
-                    phoneNumber
-            );
-
-        } catch (Exception e) {
-            log.error("❌ Failed to send mobile OTP: {}", e.getMessage());
-            return ApiResponse.error("Failed to send OTP. Please try again.");
-        }
+        return ApiResponse.error("SMS verification is no longer available. Please complete registration via email OTP.");
     }
 
     /**
-     * Step 4: Verify mobile OTP and complete registration
+     * Step 4: Complete registration after email OTP is verified (mobile OTP removed)
      */
     @Transactional
     public ApiResponse<Map<String, Object>> verifyMobileOtpAndRegister(
@@ -143,19 +116,7 @@ public class AuthService {
             String otpCode,
             HttpServletRequest request) {
 
-        log.info("📱 Step 4 - Verifying mobile OTP and registering user: {}", signUpRequest.getEmail());
-
-
-        // Verify mobile OTP
-        boolean isMobileValid = otpService.verifyOtp(
-                signUpRequest.getPhoneNumber(),
-                otpCode,
-                OtpEntity.OtpType.MOBILE_VERIFICATION
-        );
-
-        if (!isMobileValid) {
-            return ApiResponse.error("Invalid or expired mobile OTP");
-        }
+        log.info("📝 Step 4 - Completing registration for: {}", signUpRequest.getEmail());
 
         // Double check email doesn't exist (race condition)
         if (userRepository.existsByEmail(signUpRequest.getEmail())) {
@@ -179,8 +140,7 @@ public class AuthService {
                     .isActive(true)
                     .isEmailVerified(true)
                     .emailVerifiedAt(LocalDateTime.now())
-                    .isMobileVerified(true)
-                    .mobileVerifiedAt(LocalDateTime.now())
+                    .isMobileVerified(false)
                     .failedLoginAttempts(0)
                     .lastPasswordChangeAt(LocalDateTime.now())
                     .build();
@@ -205,7 +165,7 @@ public class AuthService {
             response.put("lastName", savedUser.getLastName());
             response.put("role", savedUser.getUserRole().name());
 
-            return ApiResponse.success("Registration successful! Welcome to Trading App.", response);
+            return ApiResponse.success("Registration successful! Welcome to First Million Trade.", response);
 
         } catch (Exception e) {
             log.error("❌ Registration failed: {}", e.getMessage());
@@ -245,23 +205,13 @@ public class AuthService {
             // Reset failed attempts
             userRepository.resetFailedAttempts(email);
 
-            // Always send email OTP
+            // Send email OTP
             String emailOtp = otpService.generateOtp(email, OtpEntity.OtpType.LOGIN);
             emailService.sendOtpEmail(email, emailOtp, 5);
 
-            // Send mobile OTP only if phone number is set
-            boolean hasMobile = user.getPhoneNumber() != null && !user.getPhoneNumber().isBlank();
-            if (hasMobile) {
-                String mobileOtp = otpService.generateOtp(user.getPhoneNumber(), OtpEntity.OtpType.LOGIN);
-                smsService.sendOtpSms(user.getPhoneNumber(), mobileOtp);
-            }
+            log.info("✅ Login OTP sent to {} (email)", email);
 
-            log.info("✅ Login OTP sent to {} (email){}", email,
-                    hasMobile ? " and " + maskPhoneNumber(user.getPhoneNumber()) + " (mobile)" : "");
-
-            String otpMessage = hasMobile
-                    ? "OTP sent to your email and mobile. Enter any one to login."
-                    : "OTP sent to your email. Enter it to login.";
+            String otpMessage = "OTP sent to your email. Enter it to login.";
 
             return ApiResponse.success(
                     otpMessage,
@@ -298,28 +248,12 @@ public class AuthService {
             return ApiResponse.error("Account is deactivated. Please contact support.");
         }
 
-        // Try to verify OTP for email first
+        // Verify email OTP
         boolean isEmailOtpValid = otpService.verifyOtp(email, otpCode, OtpEntity.OtpType.LOGIN);
-
-        // If email OTP fails, try mobile (only if user has a phone number)
         if (!isEmailOtpValid) {
-            boolean hasMobile = user.getPhoneNumber() != null && !user.getPhoneNumber().isBlank();
-            if (!hasMobile) {
-                return ApiResponse.error("Invalid OTP");
-            }
-            boolean isMobileOtpValid = otpService.verifyOtp(
-                    user.getPhoneNumber(),
-                    otpCode,
-                    OtpEntity.OtpType.LOGIN
-            );
-
-            if (!isMobileOtpValid) {
-                return ApiResponse.error("Invalid OTP");
-            }
-            log.info("✅ Mobile OTP verified for: {}", email);
-        } else {
-            log.info("✅ Email OTP verified for: {}", email);
+            return ApiResponse.error("Invalid OTP");
         }
+        log.info("✅ Email OTP verified for: {}", email);
 
         // Update last login
         user.setLastLoginAt(LocalDateTime.now());

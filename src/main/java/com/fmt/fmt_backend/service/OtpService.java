@@ -55,9 +55,9 @@ public class OtpService {
 //            throw new RuntimeException("Too many OTP requests from this IP. Please try again later.");
 //        }
 
-        // Check cooldown
+        // Check cooldown (per identifier + type, so login and signup OTPs don't interfere)
         LocalDateTime cooldownTime = LocalDateTime.now().minusSeconds(resendCooldownSeconds);
-        long recentCount = otpRepository.countByIdentifierAndCreatedAtAfter(identifier, cooldownTime);
+        long recentCount = otpRepository.countByIdentifierAndTypeAndCreatedAtAfter(identifier, type, cooldownTime);
 
         if (recentCount >= 1) {
             log.warn("OTP cooldown active for: {}", identifier);
@@ -109,26 +109,24 @@ public class OtpService {
             return false;
         }
 
-        // Increment attempts
-        otp.setAttempts(otp.getAttempts() + 1);
-
-        // Check if attempts exceeded
-        if (otp.getAttempts() >= maxAttempts) {
-            otp.setLockedUntil(LocalDateTime.now().plusMinutes(lockoutMinutes));
-            otpRepository.save(otp);
-            log.warn("OTP locked for {} after {} failed attempts", identifier, maxAttempts);
-            throw new RuntimeException("Too many failed attempts. Please try after " + lockoutMinutes + " minutes");
-        }
-
-        // Verify OTP
-        boolean isValid = otp.getOtpCode().equals(otpCode);
+        // Verify OTP first (trim handles copy-paste spaces)
+        boolean isValid = otp.getOtpCode().trim().equals(otpCode.trim());
 
         if (isValid) {
             otp.setVerified(true);
             otp.setVerifiedAt(LocalDateTime.now());
             log.info("OTP verified successfully for: {}", identifier);
         } else {
-            log.warn("Invalid OTP attempt for: {}", identifier);
+            // Increment attempts only on failure
+            otp.setAttempts(otp.getAttempts() + 1);
+            log.warn("Invalid OTP attempt {}/{} for: {}", otp.getAttempts(), maxAttempts, identifier);
+
+            if (otp.getAttempts() >= maxAttempts) {
+                otp.setLockedUntil(LocalDateTime.now().plusMinutes(lockoutMinutes));
+                otpRepository.save(otp);
+                log.warn("OTP locked for {} after {} failed attempts", identifier, maxAttempts);
+                throw new RuntimeException("Too many failed attempts. Please request a new OTP after " + lockoutMinutes + " minutes");
+            }
         }
 
         otpRepository.save(otp);

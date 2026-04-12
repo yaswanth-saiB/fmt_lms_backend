@@ -26,6 +26,7 @@ public class AdminController {
 
     private final AdminService adminService;
     private final EnquiryService enquiryService;
+    private final com.fmt.fmt_backend.service.MeetingService meetingService;
 
     // ---------------------------------------------------------------
     // Dashboard
@@ -200,6 +201,33 @@ public class AdminController {
     public ResponseEntity<ApiResponse<List<MeetingResponse>>> getBatchMeetings(
             @PathVariable UUID batchId) {
         return ResponseEntity.ok(ApiResponse.success("Meetings fetched", adminService.adminGetBatchMeetings(batchId)));
+    }
+
+    @PutMapping("/meetings/{meetingId}/start")
+    @Operation(summary = "Mark meeting as LIVE (admin override)")
+    public ResponseEntity<ApiResponse<MeetingResponse>> startMeeting(@PathVariable UUID meetingId) {
+        return ResponseEntity.ok(ApiResponse.success("Meeting is now LIVE", meetingService.adminStartMeeting(meetingId)));
+    }
+
+    @PutMapping("/meetings/{meetingId}/end")
+    @Operation(summary = "Mark meeting as ENDED (admin override)")
+    public ResponseEntity<ApiResponse<MeetingResponse>> endMeeting(@PathVariable UUID meetingId) {
+        return ResponseEntity.ok(ApiResponse.success("Meeting marked as ENDED", meetingService.adminEndMeeting(meetingId)));
+    }
+
+    @DeleteMapping("/meetings/{meetingId}")
+    @Operation(summary = "Cancel a meeting — only UPCOMING meetings can be cancelled")
+    public ResponseEntity<ApiResponse<Void>> cancelMeeting(@PathVariable UUID meetingId) {
+        meetingService.adminCancelMeeting(meetingId);
+        return ResponseEntity.ok(ApiResponse.success("Meeting cancelled", null));
+    }
+
+    @PutMapping("/meetings/{meetingId}/reschedule")
+    @Operation(summary = "Reschedule a meeting — only UPCOMING meetings")
+    public ResponseEntity<ApiResponse<MeetingResponse>> rescheduleMeeting(
+            @PathVariable UUID meetingId,
+            @Valid @RequestBody RescheduleMeetingRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Meeting rescheduled", meetingService.adminRescheduleMeeting(meetingId, request)));
     }
 
     // ---------------------------------------------------------------

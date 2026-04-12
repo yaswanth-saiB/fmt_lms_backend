@@ -1,6 +1,7 @@
 package com.fmt.fmt_backend.entity;
 
 import com.fmt.fmt_backend.enums.MeetingStatus;
+import com.fmt.fmt_backend.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
@@ -22,6 +23,11 @@ public class Meeting extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "batch_id", nullable = false)
     private Batch batch;
+
+    /** Mentor conducting this class — any mentor can take any batch's class */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "mentor_id", nullable = false)
+    private User mentor;
 
     @Column(name = "zoom_meeting_id")
     private String zoomMeetingId;

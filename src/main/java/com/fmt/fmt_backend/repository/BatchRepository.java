@@ -16,6 +16,8 @@ public interface BatchRepository extends JpaRepository<Batch, UUID> {
 
     List<Batch> findByCourseOrderByCreatedAtDesc(Course course);
 
+    List<Batch> findAllByOrderByCreatedAtDesc();
+
     @Query("SELECT b FROM Batch b WHERE b.course.mentor.id = :mentorId ORDER BY b.createdAt DESC")
     List<Batch> findByMentorId(@Param("mentorId") UUID mentorId);
 
