@@ -16,6 +16,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.thymeleaf.TemplateEngine;
+import org.thymeleaf.context.Context;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -29,6 +31,7 @@ public class SendGridEmailService {
 
     private final SendGrid sendGrid;
     private final SendGridProperties properties;
+    private final TemplateEngine templateEngine;
 
     @Value("${sendgrid.enabled:true}")
     private boolean emailEnabled;
@@ -265,58 +268,19 @@ public class SendGridEmailService {
     }
 
     private String buildOtpTemplate(String otp, int expiryMinutes) {
-        return String.format("""
-            <!DOCTYPE html>
-            <html>
-            <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0;">
-                <div style="max-width: 560px; margin: 40px auto; background: #ffffff; border-radius: 8px; padding: 40px;">
-                    <h2 style="color: #1a1a1a; margin-bottom: 8px;">First Million Trade</h2>
-                    <p style="color: #555;">Use the verification code below to continue:</p>
-                    <div style="background-color: #f0f4ff; border-radius: 6px; padding: 24px; text-align: center; margin: 24px 0;">
-                        <span style="font-size: 40px; font-weight: bold; letter-spacing: 8px; color: #1a1a1a;">%s</span>
-                    </div>
-                    <p style="color: #555;">This code expires in <strong>%d minutes</strong>. Do not share it with anyone.</p>
-                    <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
-                    <p style="font-size: 12px; color: #999;">
-                        If you did not request this code, you can safely ignore this email.<br>
-                        &copy; First Million Trade
-                    </p>
-                </div>
-            </body>
-            </html>
-            """, otp, expiryMinutes);
+        Context ctx = new Context();
+        ctx.setVariable("otp", otp);
+        ctx.setVariable("expiryMinutes", expiryMinutes);
+        ctx.setVariable("year", LocalDateTime.now().getYear());
+        return templateEngine.process("email/otp-email", ctx);
     }
 
     private String buildWelcomeTemplate(String firstName, String role) {
-        return String.format("""
-            <!DOCTYPE html>
-            <html>
-            <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0;">
-                <div style="max-width: 560px; margin: 40px auto; background: #ffffff; border-radius: 8px; padding: 40px;">
-                    <h2 style="color: #1a1a1a;">Welcome to First Million Trade, %s!</h2>
-                    <p style="color: #555; line-height: 1.6;">
-                        Your account has been successfully created. We're excited to have you on board.
-                    </p>
-                    <p style="color: #555; line-height: 1.6;">
-                        You can now log in and start exploring our trading courses and live sessions.
-                    </p>
-                    <div style="margin: 32px 0;">
-                        <a href="https://app.firstmilliontrade.com"
-                           style="background-color: #1a1a1a; color: #ffffff; padding: 14px 28px;
-                                  text-decoration: none; border-radius: 6px; font-weight: bold;">
-                            Go to Dashboard
-                        </a>
-                    </div>
-                    <p style="color: #555; font-size: 14px;">
-                        If you have any questions, reply to this email or reach us at
-                        <a href="mailto:help@firstmilliontrade.com" style="color: #1a1a1a;">help@firstmilliontrade.com</a>.
-                    </p>
-                    <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
-                    <p style="font-size: 12px; color: #999;">&copy; First Million Trade. All rights reserved.</p>
-                </div>
-            </body>
-            </html>
-            """, firstName, role);
+        Context ctx = new Context();
+        ctx.setVariable("firstName", firstName);
+        ctx.setVariable("dashboardUrl", "https://app.firstmilliontrade.com/dashboard");
+        ctx.setVariable("year", LocalDateTime.now().getYear());
+        return templateEngine.process("email/welcome-email", ctx);
     }
 
     private String buildPromoTemplate(String firstName, String campaign) {
