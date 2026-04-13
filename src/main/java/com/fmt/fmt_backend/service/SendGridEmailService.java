@@ -147,81 +147,8 @@ public class SendGridEmailService {
     @Async
     public void sendEnquiryNotification(Enquiry enquiry) {
         SenderInfo sender = senderMap.get(EmailType.ENQUIRY);
-        String subject = "📋 New Enquiry Received - First Million Trade";
-
-        String htmlContent = String.format("""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <style>
-                    body { font-family: Arial, sans-serif; line-height: 1.6; }
-                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                    .header { background-color: #4CAF50; color: white; padding: 10px; text-align: center; }
-                    .details { background-color: #f9f9f9; padding: 15px; margin: 10px 0; border-radius: 5px; }
-                    .field { margin: 10px 0; }
-                    .label { font-weight: bold; color: #333; display: inline-block; width: 120px; }
-                    .value { margin-left: 10px; }
-                    .footer { margin-top: 20px; color: #666; font-size: 12px; text-align: center; }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="header">
-                        <h2>📋 New Enquiry Received</h2>
-                    </div>
-                    <div class="details">
-                        <div class="field">
-                            <span class="label">Name:</span>
-                            <span class="value">%s</span>
-                        </div>
-                        <div class="field">
-                            <span class="label">Mobile:</span>
-                            <span class="value">%s</span>
-                        </div>
-                        <div class="field">
-                            <span class="label">City:</span>
-                            <span class="value">%s</span>
-                        </div>
-                        <div class="field">
-                            <span class="label">Experience:</span>
-                            <span class="value">%s</span>
-                        </div>
-                        <div class="field">
-                            <span class="label">Interest:</span>
-                            <span class="value">%s</span>
-                        </div>
-                        <div class="field">
-                            <span class="label">Message:</span>
-                            <span class="value">%s</span>
-                        </div>
-                        <div class="field">
-                            <span class="label">IP Address:</span>
-                            <span class="value">%s</span>
-                        </div>
-                        <div class="field">
-                            <span class="label">Received:</span>
-                            <span class="value">%s</span>
-                        </div>
-                    </div>
-                    <div class="footer">
-                        This is an automated notification from First Million Trade<br>
-                        Please contact the enquirer within 24 hours.
-                    </div>
-                </div>
-            </body>
-            </html>
-            """,
-                enquiry.getName(),
-                enquiry.getMobile(),
-                enquiry.getCity() != null ? enquiry.getCity() : "Not provided",
-                enquiry.getExperienceLevel() != null ? enquiry.getExperienceLevel() : "Not provided",
-                enquiry.getAreaOfInterest() != null ? enquiry.getAreaOfInterest() : "Not provided",
-                enquiry.getMessage() != null ? enquiry.getMessage() : "Not provided",
-                enquiry.getIpAddress() != null ? enquiry.getIpAddress() : "Unknown",
-                enquiry.getCreatedAt() != null ?
-                        enquiry.getCreatedAt().toString() :
-                        LocalDateTime.now().toString()
-        );
+        String subject = "New Enquiry Received - First Million Trade";
+        String htmlContent = buildEnquiryTemplate(enquiry);
 
         sendEmail(properties.getAdminEmail(), subject, htmlContent, sender, EmailType.ENQUIRY);
     }
@@ -267,6 +194,21 @@ public class SendGridEmailService {
         }
     }
 
+    private String buildEnquiryTemplate(Enquiry enquiry) {
+        Context ctx = new Context();
+        ctx.setVariable("name",            enquiry.getName());
+        ctx.setVariable("mobile",          enquiry.getMobile());
+        ctx.setVariable("city",            enquiry.getCity());
+        ctx.setVariable("experienceLevel", enquiry.getExperienceLevel());
+        ctx.setVariable("areaOfInterest",  enquiry.getAreaOfInterest());
+        ctx.setVariable("message",         enquiry.getMessage());
+        ctx.setVariable("ipAddress",       enquiry.getIpAddress() != null ? enquiry.getIpAddress() : "Unknown");
+        ctx.setVariable("receivedAt",      enquiry.getCreatedAt() != null
+                ? enquiry.getCreatedAt().toString() : LocalDateTime.now().toString());
+        ctx.setVariable("year",            LocalDateTime.now().getYear());
+        return templateEngine.process("email/enquiry-email", ctx);
+    }
+
     private String buildOtpTemplate(String otp, int expiryMinutes) {
         Context ctx = new Context();
         ctx.setVariable("otp", otp);
@@ -278,7 +220,7 @@ public class SendGridEmailService {
     private String buildWelcomeTemplate(String firstName, String role) {
         Context ctx = new Context();
         ctx.setVariable("firstName", firstName);
-        ctx.setVariable("dashboardUrl", "https://app.firstmilliontrade.com/dashboard");
+        ctx.setVariable("dashboardUrl", "https://firstmilliontrade.com/dashboard");
         ctx.setVariable("year", LocalDateTime.now().getYear());
         return templateEngine.process("email/welcome-email", ctx);
     }

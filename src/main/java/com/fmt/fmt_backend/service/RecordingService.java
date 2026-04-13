@@ -15,6 +15,7 @@ import com.fmt.fmt_backend.repository.RecordingRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.*;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -25,10 +26,14 @@ import org.springframework.web.server.ResponseStatusException;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -203,17 +208,22 @@ public class RecordingService {
         UUID   recordingId      = r.getId();
         String zoomMeetingId    = r.getMeeting().getZoomMeetingId();
 
-        // ---- Step 1: Create video object in Bunny ----
-        String bunnyVideoId = createBunnyVideoObject(title);
-        log.info("Bunny video object created: videoId={} for recording={}", bunnyVideoId, recordingId);
+        // ---- Step 1: Create video object in Bunny (only once — reuse on retries) ----
+        // If a previous attempt already created the video object, reuse that videoId
+        // instead of creating another orphan in Bunny.
+        String bunnyVideoId = r.getBunnyVideoId();
+        if (bunnyVideoId == null) {
+            bunnyVideoId = createBunnyVideoObject(title);
+            r.setBunnyVideoId(bunnyVideoId);
+            recordingRepository.save(r); // persist early so retries pick up the same videoId
+            log.info("Bunny video object created: videoId={} for recording={}", bunnyVideoId, recordingId);
+        } else {
+            log.info("Reusing existing Bunny videoId={} for recording={} (retry)", bunnyVideoId, recordingId);
+        }
 
-        // ---- Step 2: Download from Zoom and stream-upload to Bunny ----
-        streamZoomToBunny(zoomDownloadUrl, bunnyVideoId);
-        log.info("Video streamed to Bunny for recording={}", recordingId);
-
-        // ---- Step 3: Update DB with Bunny video ID (status stays PROCESSING — Bunny webhook sets AVAILABLE) ----
-        r.setBunnyVideoId(bunnyVideoId);
-        recordingRepository.save(r);
+        // ---- Step 2: Download from Zoom to temp file, then upload to Bunny ----
+        streamZoomToBunny(zoomDownloadUrl, bunnyVideoId, recordingId);
+        log.info("Video uploaded to Bunny for recording={}", recordingId);
 
         // ---- Step 4: Delete recording from Zoom Cloud to stay within storage limits ----
         deleteZoomRecording(zoomMeetingId);
@@ -326,44 +336,66 @@ public class RecordingService {
     }
 
     /**
-     * Streams the MP4 from Zoom directly to Bunny without buffering the whole file in memory.
-     * Uses RestTemplate with byte[] — adequate for class recordings (typically 1–3 GB).
+     * Downloads the MP4 from Zoom to a temp file, then uploads it to Bunny.net Stream.
      *
-     * For very large files a chunked/InputStreamResource approach can be added later,
-     * but RestTemplate handles the streaming efficiently enough for this scale.
+     * Temp file approach avoids loading the entire video into the JVM heap (which would
+     * cause OOM on EC2 with -Xmx512m for recordings longer than a few minutes).
+     *
+     * The download URL must already contain ?access_token=<download_token> — appended
+     * by the webhook handler. Bearer OAuth does not work for Zoom recording downloads.
+     *
+     * Temp file is always deleted in the finally block, even if upload fails.
      */
-    private void streamZoomToBunny(String zoomDownloadUrl, String bunnyVideoId) {
-        // Download from Zoom (streaming — RestTemplate handles internally)
-        HttpHeaders zoomHeaders = new HttpHeaders();
-        zoomHeaders.setBearerAuth(zoomService.getAccessToken());
-        zoomHeaders.set("Accept", "application/octet-stream");
+    private void streamZoomToBunny(String zoomDownloadUrl, String bunnyVideoId, UUID recordingId) {
+        Path tempFile = Path.of(System.getProperty("java.io.tmpdir"), "recording-" + recordingId + ".mp4");
 
-        ResponseEntity<byte[]> zoomResponse = restTemplate.exchange(
-                zoomDownloadUrl,
-                HttpMethod.GET,
-                new HttpEntity<>(zoomHeaders),
-                byte[].class);
+        try {
+            // ---- Download from Zoom → temp file (streams to disk, no heap buffering) ----
+            log.info("Downloading Zoom recording {} to temp file: {}", recordingId, tempFile);
 
-        if (!zoomResponse.getStatusCode().is2xxSuccessful() || zoomResponse.getBody() == null) {
-            throw new RuntimeException("Failed to download recording from Zoom");
-        }
+            restTemplate.execute(
+                    zoomDownloadUrl,
+                    HttpMethod.GET,
+                    request -> request.getHeaders().set("Accept", "application/octet-stream"),
+                    response -> {
+                        Files.copy(response.getBody(), tempFile, StandardCopyOption.REPLACE_EXISTING);
+                        return null;
+                    });
 
-        byte[] videoBytes = zoomResponse.getBody();
-        log.info("Downloaded {} bytes from Zoom", videoBytes.length);
+            long fileSize = Files.size(tempFile);
+            log.info("Zoom download complete: {} bytes for recording {}", fileSize, recordingId);
 
-        // Upload to Bunny
-        HttpHeaders bunnyHeaders = new HttpHeaders();
-        bunnyHeaders.set("AccessKey", bunnyApiKey);
-        bunnyHeaders.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            // ---- Upload temp file → Bunny with correct Content-Length ----
+            log.info("Uploading recording {} to Bunny (videoId={})", recordingId, bunnyVideoId);
 
-        ResponseEntity<String> bunnyResponse = restTemplate.exchange(
-                BUNNY_API_BASE + bunnyLibraryId + "/videos/" + bunnyVideoId,
-                HttpMethod.PUT,
-                new HttpEntity<>(videoBytes, bunnyHeaders),
-                String.class);
+            HttpHeaders bunnyHeaders = new HttpHeaders();
+            bunnyHeaders.set("AccessKey", bunnyApiKey);
+            bunnyHeaders.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            bunnyHeaders.setContentLength(fileSize);
 
-        if (!bunnyResponse.getStatusCode().is2xxSuccessful()) {
-            throw new RuntimeException("Failed to upload video to Bunny: HTTP " + bunnyResponse.getStatusCode());
+            ResponseEntity<String> bunnyResponse = restTemplate.exchange(
+                    BUNNY_API_BASE + bunnyLibraryId + "/videos/" + bunnyVideoId,
+                    HttpMethod.PUT,
+                    new HttpEntity<>(new FileSystemResource(tempFile), bunnyHeaders),
+                    String.class);
+
+            if (!bunnyResponse.getStatusCode().is2xxSuccessful()) {
+                throw new RuntimeException("Bunny upload failed: HTTP " + bunnyResponse.getStatusCode());
+            }
+
+            log.info("Bunny upload complete for recording {}", recordingId);
+
+        } catch (IOException e) {
+            throw new RuntimeException("I/O error during recording transfer: " + e.getMessage(), e);
+        } finally {
+            // Always clean up — even if download or upload threw
+            try {
+                if (Files.deleteIfExists(tempFile)) {
+                    log.info("Temp file deleted: {}", tempFile);
+                }
+            } catch (IOException e) {
+                log.warn("Could not delete temp file {}: {}", tempFile, e.getMessage());
+            }
         }
     }
 
@@ -539,23 +571,26 @@ public class RecordingService {
     // =========================================================================
 
     /**
-     * Generates a signed Bunny.net Stream play URL valid for 3 hours.
+     * Generates a signed Bunny.net Stream embed URL valid for 3 hours.
      *
-     * Algorithm:
-     *   message = bunnyVideoId + expiryTimestamp
-     *   token   = Base64URL(HMAC-SHA256(key=bunnyTokenKey, message))
-     *   url     = https://{cdn-hostname}/{bunnyVideoId}/play?token={token}&expires={expiry}
+     * Bunny Stream token authentication algorithm (from Bunny docs):
+     *   token = SHA256(tokenKey + videoId + expiryTimestamp)  →  lowercase hex
+     *   url   = https://iframe.mediadelivery.net/embed/{libraryId}/{videoId}?token={token}&expires={expiry}
+     *
+     * Note: This is plain SHA-256 (NOT HMAC-SHA256) and hex-encoded (NOT Base64URL).
+     * The embed URL uses iframe.mediadelivery.net, not the pull-zone CDN hostname.
      */
     private String buildSignedBunnyUrl(String bunnyVideoId) {
         try {
             long expires = Instant.now().plusSeconds(10800).getEpochSecond();
 
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(bunnyTokenKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            byte[] hash = mac.doFinal((bunnyVideoId + expires).getBytes(StandardCharsets.UTF_8));
-            String token = Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(
+                    (bunnyTokenKey + bunnyVideoId + expires).getBytes(StandardCharsets.UTF_8));
+            String token = HexFormat.of().formatHex(hash);
 
-            return "https://" + bunnyCdnHostname + "/" + bunnyVideoId + "/play"
+            return "https://iframe.mediadelivery.net/embed/" + bunnyLibraryId
+                    + "/" + bunnyVideoId
                     + "?token=" + token + "&expires=" + expires;
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate signed play URL", e);

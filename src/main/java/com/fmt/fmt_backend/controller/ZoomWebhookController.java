@@ -145,6 +145,10 @@ public class ZoomWebhookController {
         String topic         = object.path("topic").asText();
         int    durationMins  = object.path("duration").asInt(0);
 
+        // Zoom provides a short-lived download_token (valid 24h) at the root of the payload.
+        // It must be appended as ?access_token=<token> — Bearer OAuth does NOT work for recording downloads.
+        String downloadToken = root.path("download_token").asText(null);
+
         // Find the MP4 download URL from recording_files
         String downloadUrl = null;
         for (JsonNode file : object.path("recording_files")) {
@@ -158,6 +162,13 @@ public class ZoomWebhookController {
         if (downloadUrl == null || downloadUrl.isBlank()) {
             log.warn("recording.completed for meeting={}: no MP4 file found — ignored", zoomMeetingId);
             return;
+        }
+
+        // Append download token so the stored URL is immediately usable by the async job
+        if (downloadToken != null && !downloadToken.isBlank()) {
+            downloadUrl = downloadUrl + "?access_token=" + downloadToken;
+        } else {
+            log.warn("recording.completed for meeting={}: no download_token in payload — download may fail", zoomMeetingId);
         }
 
         log.info("recording.completed: meeting={}, topic='{}', duration={}min", zoomMeetingId, topic, durationMins);

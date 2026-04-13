@@ -125,21 +125,20 @@ Authorization: (cookie or Bearer token)
 **Response `200 OK`:**
 ```json
 {
-  "playUrl": "https://vz-xxxxxxxx.b-cdn.net/<videoId>/play?token=abc123&expires=1713000000",
+  "playUrl": "https://iframe.mediadelivery.net/embed/<libraryId>/<videoId>?token=abc123&expires=1713000000",
   "expiresIn": 10800
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `playUrl` | `string` | Signed Bunny.net Stream URL — valid for 3 hours |
+| `playUrl` | `string` | Signed Bunny.net Stream embed URL — valid for 3 hours |
 | `expiresIn` | `number` | Seconds until the URL expires (always 10800 = 3h) |
 
 **Signed URL algorithm (backend reference):**
 ```
-message = bunnyVideoId + expiryTimestamp
-token   = Base64URL(HMAC-SHA256(key=bunnyTokenKey, message))
-url     = https://{cdnHostname}/{bunnyVideoId}/play?token={token}&expires={expiryTimestamp}
+token = SHA256(tokenKey + videoId + expiryTimestamp)  →  lowercase hex
+url   = https://iframe.mediadelivery.net/embed/{libraryId}/{videoId}?token={token}&expires={expiryTimestamp}
 ```
 
 **Error responses:**
@@ -156,7 +155,7 @@ url     = https://{cdnHostname}/{bunnyVideoId}/play?token={token}&expires={expir
 
 ## How to Embed the Video
 
-Use Bunny.net's built-in iframe player. The `playUrl` is the direct URL:
+The `playUrl` is a Bunny Stream embed URL — put it directly in an `<iframe>`:
 
 ```html
 <iframe
@@ -169,14 +168,7 @@ Use Bunny.net's built-in iframe player. The `playUrl` is the direct URL:
 ></iframe>
 ```
 
-Or use it with a custom player (Video.js, Plyr, etc.) as a direct `.m3u8` HLS source:
-
-```js
-// Replace /play with /playlist.m3u8 for HLS
-const hlsUrl = playUrl.replace('/play', '/playlist.m3u8');
-```
-
-> Bunny.net also supports direct MP4 streaming — the `/play` URL handles both HLS and direct playback automatically.
+> The URL already contains the signed token — do not modify it. Use it as returned.
 
 ---
 

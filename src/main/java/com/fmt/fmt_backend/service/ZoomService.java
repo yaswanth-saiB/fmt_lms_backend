@@ -107,8 +107,12 @@ public class ZoomService {
 
         Map<String, Object> settings = new HashMap<>();
         settings.put("auto_recording", "cloud");
-        settings.put("waiting_room", false);
-        settings.put("join_before_host", false);
+        settings.put("waiting_room", true);          // students wait until host starts — prevents host-claim prompt
+        settings.put("join_before_host", false);     // no one enters before mentor starts
+        settings.put("mute_upon_entry", true);       // students join muted
+        settings.put("participant_video", false);    // students join with camera off
+        settings.put("host_video", true);            // mentor joins with camera on
+        settings.put("allow_multiple_devices", false);
         body.put("settings", settings);
 
         ResponseEntity<Map> response = restTemplate.exchange(
