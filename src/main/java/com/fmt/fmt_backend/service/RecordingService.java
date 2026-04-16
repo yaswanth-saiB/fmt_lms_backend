@@ -1,5 +1,6 @@
 package com.fmt.fmt_backend.service;
 
+import com.fmt.fmt_backend.dto.ManualRecordingRequest;
 import com.fmt.fmt_backend.dto.PlayUrlResponse;
 import com.fmt.fmt_backend.dto.RecordingResponse;
 import com.fmt.fmt_backend.dto.StudentRecordingResponse;
@@ -7,6 +8,7 @@ import com.fmt.fmt_backend.entity.Batch;
 import com.fmt.fmt_backend.entity.Meeting;
 import com.fmt.fmt_backend.entity.Recording;
 import com.fmt.fmt_backend.entity.User;
+import com.fmt.fmt_backend.enums.MeetingStatus;
 import com.fmt.fmt_backend.enums.RecordingStatus;
 import com.fmt.fmt_backend.repository.BatchEnrollmentRepository;
 import com.fmt.fmt_backend.repository.BatchRepository;
@@ -146,6 +148,153 @@ public class RecordingService {
         Recording saved = recordingRepository.save(recording);
         log.info("Recording row created: id={}, meeting={}, status=PROCESSING", saved.getId(), zoomMeetingId);
         return saved;
+    }
+
+    // =========================================================================
+    // ADMIN MANUAL — create recording when Zoom webhook was missed (app was down)
+    // =========================================================================
+
+    /**
+     * Admin-only: manually trigger recording processing for a class that ran
+     * while the app was down (Zoom webhook was never received).
+     *
+     * Lookup order for the meeting:
+     *   1. request.meetingId (our UUID) — direct lookup, most reliable
+     *   2. request.zoomMeetingId field on the Meeting entity
+     *   3. If still not found and request.batchId is provided → create placeholder meeting
+     *
+     * The Zoom download URL is fetched fresh from the Zoom API using the
+     * zoomMeetingId — admin never needs to paste token-bearing URLs.
+     *
+     * Returns a RecordingResponse (batch name already resolved inside the transaction)
+     * so the caller can kick off processRecordingAsync() without touching lazy fields.
+     */
+    @Transactional
+    public RecordingResponse createManualRecording(ManualRecordingRequest request) {
+        String zoomMeetingId = request.getZoomMeetingId().trim();
+
+        // Step 1 — resolve Meeting record
+        Meeting meeting = null;
+        if (request.getMeetingId() != null) {
+            meeting = meetingRepository.findById(request.getMeetingId())
+                    .orElseThrow(() -> new ResponseStatusException(
+                            org.springframework.http.HttpStatus.NOT_FOUND,
+                            "Meeting not found in our system for id=" + request.getMeetingId()));
+        }
+        if (meeting == null) {
+            meeting = meetingRepository.findByZoomMeetingId(zoomMeetingId).orElse(null);
+        }
+        if (meeting == null) {
+            // Class was run fully outside the app — create a placeholder meeting
+            if (request.getBatchId() == null) {
+                throw new ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND,
+                        "No meeting found for Zoom meeting ID '" + zoomMeetingId
+                        + "' in our system. If this class was run directly from Zoom (not through the app), "
+                        + "provide batchId so a placeholder meeting can be created.");
+            }
+            Batch batch = batchRepository.findById(request.getBatchId())
+                    .orElseThrow(() -> new ResponseStatusException(
+                            org.springframework.http.HttpStatus.NOT_FOUND, "Batch not found"));
+            String placeholderTitle = request.getTitle() != null
+                    ? request.getTitle() : "Manual Recording — Zoom " + zoomMeetingId;
+            meeting = Meeting.builder()
+                    .batch(batch)
+                    .mentor(batch.getCourse().getMentor())
+                    .zoomMeetingId(zoomMeetingId)
+                    .topic(placeholderTitle)
+                    .status(MeetingStatus.ENDED)
+                    .durationMins(request.getDurationMins() != null ? request.getDurationMins() : 120)
+                    .build();
+            meeting = meetingRepository.save(meeting);
+            log.info("Created placeholder meeting record for Zoom meeting {} in batch {}", zoomMeetingId, request.getBatchId());
+        }
+
+        // Step 2 — idempotency: don't create a second recording for the same meeting
+        if (recordingRepository.findByMeeting_ZoomMeetingId(zoomMeetingId).isPresent()) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT,
+                    "A recording already exists for Zoom meeting " + zoomMeetingId
+                    + ". If it failed, use the retry endpoint instead.");
+        }
+
+        // Step 3 — fetch fresh download URL from Zoom API (includes a valid token)
+        String downloadUrl = zoomService.fetchRecordingDownloadUrl(zoomMeetingId);
+
+        // Step 4 — build and save the recording row
+        Batch batch = meeting.getBatch();
+        String title = request.getTitle() != null ? request.getTitle() : meeting.getTopic();
+        Integer durationMins = request.getDurationMins() != null
+                ? request.getDurationMins() : meeting.getDurationMins();
+
+        LocalDateTime expiresAt = batch.getEndDate() != null
+                ? batch.getEndDate().plusMonths(2).atStartOfDay()
+                : LocalDateTime.now().plusMonths(3);
+
+        Recording recording = Recording.builder()
+                .meeting(meeting)
+                .batch(batch)
+                .zoomDownloadUrl(downloadUrl)
+                .title(title)
+                .durationMins(durationMins)
+                .status(RecordingStatus.PROCESSING)
+                .expiresAt(expiresAt)
+                .build();
+
+        Recording saved = recordingRepository.save(recording);
+        log.info("Manual recording created: id={}, meeting={}, status=PROCESSING", saved.getId(), zoomMeetingId);
+
+        // Resolve batch/course names while still inside the transaction (lazy-safe)
+        String courseName = null;
+        try { courseName = batch.getCourse() != null ? batch.getCourse().getTitle() : null; } catch (Exception ignored) {}
+
+        return RecordingResponse.builder()
+                .id(saved.getId())
+                .title(saved.getTitle())
+                .batchId(batch.getId())
+                .batchName(batch.getName())
+                .courseName(courseName)
+                .status(saved.getStatus())
+                .durationMins(saved.getDurationMins())
+                .build();
+    }
+
+    /**
+     * Admin-only: retry a recording that is in FAILED status.
+     *
+     * Re-fetches a fresh Zoom download URL (the stored one may have an expired token)
+     * and re-triggers async processing. Resets status to PROCESSING so the admin
+     * can track progress.
+     *
+     * Only FAILED recordings can be retried — PROCESSING or AVAILABLE recordings
+     * are rejected to avoid duplicate uploads.
+     */
+    @Transactional
+    public void retryFailedRecording(UUID recordingId) {
+        Recording recording = recordingRepository.findByIdWithMeeting(recordingId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "Recording not found"));
+
+        if (recording.getStatus() != RecordingStatus.FAILED) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Only FAILED recordings can be retried. Current status: " + recording.getStatus());
+        }
+
+        String zoomMeetingId = recording.getMeeting().getZoomMeetingId();
+        if (zoomMeetingId == null || zoomMeetingId.isBlank()) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "This recording has no Zoom meeting ID — cannot re-fetch download URL from Zoom");
+        }
+
+        // Fetch a fresh download URL with a valid token
+        String freshDownloadUrl = zoomService.fetchRecordingDownloadUrl(zoomMeetingId);
+        recording.setZoomDownloadUrl(freshDownloadUrl);
+        recording.setStatus(RecordingStatus.PROCESSING);
+        recordingRepository.save(recording);
+
+        log.info("Recording {} reset to PROCESSING for retry (Zoom meeting {})", recordingId, zoomMeetingId);
     }
 
     // =========================================================================

@@ -220,12 +220,99 @@ List recordings for a specific batch (mentor view).
 
 ### 5. `GET /api/admin/recordings`
 
-List all recordings across all batches (existing endpoint — already documented).
+List all recordings across all batches.
 
 **Auth:** Required  
 **Role:** ADMIN
 
-**Response:** Same shape as mentor, all batches.
+**Response:** Same shape as mentor list, all batches included.
+
+---
+
+### 6. `POST /api/admin/recordings/manual` — Manual Recording (Backup Flow)
+
+**When to use:** The app was down during a live class. The class continued on Zoom, the recording saved to Zoom Cloud, but the Zoom webhook was never received by our backend. Use this to manually trigger the download → Bunny upload pipeline for that missed recording.
+
+**Auth:** Required  
+**Role:** ADMIN only
+
+**Request body:**
+```json
+{
+  "zoomMeetingId": "87654321234",
+  "meetingId": "uuid (optional)",
+  "batchId": "uuid (optional — only needed if meeting wasn't created via our app)",
+  "title": "Class 14 - Risk Management (optional override)",
+  "durationMins": 120
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `zoomMeetingId` | **Yes** | The Zoom meeting ID — the numeric string visible in Zoom dashboard or cloud recordings page |
+| `meetingId` | No | Our internal meeting UUID. Use this if you can find the meeting in the admin panel — most precise. |
+| `batchId` | Conditional | Required **only** if the class was run directly from Zoom (not created via our app). A placeholder meeting record will be created. |
+| `title` | No | Override the recording title. Defaults to the meeting topic. |
+| `durationMins` | No | Override the duration. Defaults to what's stored on the meeting. |
+
+**How admin finds the Zoom meeting ID:**
+- Go to zoom.us → Recordings → Cloud Recordings
+- Find the class recording — the meeting ID is shown (e.g. `87654321234`)
+- Copy and paste it into this field
+
+> The backend calls the Zoom API directly to fetch the download URL — admin does NOT need to paste any token-bearing URLs.
+
+**Response `200 OK`:**
+```json
+{
+  "success": true,
+  "message": "Recording queued for processing. It will be AVAILABLE in ~15–30 minutes.",
+  "data": {
+    "id": "uuid",
+    "title": "Class 14 - Risk Management",
+    "batchId": "uuid",
+    "batchName": "April 2026 Batch",
+    "status": "PROCESSING",
+    "durationMins": 120
+  }
+}
+```
+
+**Error responses:**
+| Code | Meaning | Fix |
+|------|---------|-----|
+| `404` | Meeting not found by zoomMeetingId | Provide `meetingId` (our UUID), or provide `batchId` if class ran outside app |
+| `409` | Recording already exists for this meeting | Use the retry endpoint if it failed |
+| `400` | Zoom has no completed recording yet | Wait a few minutes — Zoom may still be processing |
+| `503` | Zoom API call failed | Check ZOOM_* env vars; Zoom may be down |
+
+---
+
+### 7. `POST /api/admin/recordings/{recordingId}/retry`
+
+Retry a recording that has `status: FAILED`.
+
+**Auth:** Required  
+**Role:** ADMIN only
+
+**When to use:** A recording failed to process (Bunny upload failed, network error, etc.). This re-fetches a fresh Zoom download URL (the previously stored token may have expired) and restarts the pipeline.
+
+**Request:** No body — just the recording UUID in the path.
+
+**Response `200 OK`:**
+```json
+{
+  "success": true,
+  "message": "Recording retry started. Check status in ~15–30 minutes.",
+  "data": null
+}
+```
+
+**Error responses:**
+| Code | Meaning |
+|------|---------|
+| `404` | Recording not found |
+| `400` | Recording is not in FAILED status (only FAILED can be retried) |
 
 ---
 

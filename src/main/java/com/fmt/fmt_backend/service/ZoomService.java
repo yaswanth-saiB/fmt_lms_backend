@@ -9,6 +9,7 @@ import org.springframework.web.client.RestTemplate;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -133,6 +134,62 @@ public class ZoomService {
 
         log.info("Zoom meeting created: id={}", meeting.get("id"));
         return meeting;
+    }
+
+    /**
+     * Fetches the MP4 recording download URL for a past Zoom meeting.
+     *
+     * Calls GET /meetings/{zoomMeetingId}/recordings and extracts the first
+     * completed MP4 file. Appends the download_token as ?access_token= so
+     * the returned URL can be used directly without Bearer auth (same approach
+     * as the Zoom webhook flow).
+     *
+     * @param zoomMeetingId Zoom's numeric meeting ID (e.g. "87654321234")
+     * @return Full download URL with access token appended
+     * @throws RuntimeException if no completed MP4 recording exists
+     */
+    @SuppressWarnings("unchecked")
+    public String fetchRecordingDownloadUrl(String zoomMeetingId) {
+        log.info("Fetching recording info from Zoom API for meeting {}", zoomMeetingId);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(getAccessToken());
+
+        ResponseEntity<Map> response = restTemplate.exchange(
+                ZOOM_API_BASE + "/meetings/" + zoomMeetingId + "/recordings",
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                Map.class);
+
+        if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+            throw new RuntimeException("Zoom API returned no data for meeting " + zoomMeetingId);
+        }
+
+        Map<String, Object> body = response.getBody();
+        String downloadToken = (String) body.getOrDefault("download_token", null);
+
+        List<Map<String, Object>> files = (List<Map<String, Object>>) body.get("recording_files");
+        if (files == null || files.isEmpty()) {
+            throw new RuntimeException("No recording files found on Zoom for meeting " + zoomMeetingId);
+        }
+
+        for (Map<String, Object> file : files) {
+            String fileType = (String) file.getOrDefault("file_type", "");
+            String status   = (String) file.getOrDefault("status", "");
+            if ("MP4".equalsIgnoreCase(fileType) && "completed".equalsIgnoreCase(status)) {
+                String downloadUrl = (String) file.get("download_url");
+                if (downloadToken != null && !downloadToken.isBlank()) {
+                    downloadUrl = downloadUrl + "?access_token=" + downloadToken;
+                } else {
+                    log.warn("No download_token for Zoom meeting {} — download may fail", zoomMeetingId);
+                }
+                log.info("Found MP4 recording for Zoom meeting {}", zoomMeetingId);
+                return downloadUrl;
+            }
+        }
+
+        throw new RuntimeException("No completed MP4 recording found on Zoom for meeting " + zoomMeetingId
+                + ". It may still be processing — wait a few minutes and try again.");
     }
 
     /**

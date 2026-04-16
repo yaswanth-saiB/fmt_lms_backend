@@ -1,6 +1,7 @@
 package com.fmt.fmt_backend.controller;
 
 import com.fmt.fmt_backend.dto.*;
+import com.fmt.fmt_backend.service.RecordingService;
 import com.fmt.fmt_backend.entity.Enquiry;
 import com.fmt.fmt_backend.enums.BatchStatus;
 import com.fmt.fmt_backend.enums.UserRole;
@@ -27,6 +28,7 @@ public class AdminController {
     private final AdminService adminService;
     private final EnquiryService enquiryService;
     private final com.fmt.fmt_backend.service.MeetingService meetingService;
+    private final RecordingService recordingService;
 
     // ---------------------------------------------------------------
     // Dashboard
@@ -280,6 +282,36 @@ public class AdminController {
     @Operation(summary = "List all recordings across all batches")
     public ResponseEntity<ApiResponse<List<RecordingResponse>>> getRecordings() {
         return ResponseEntity.ok(ApiResponse.success("Recordings fetched", adminService.getAllRecordings()));
+    }
+
+    @PostMapping("/recordings/manual")
+    @Operation(
+        summary = "Manually trigger a recording when the Zoom webhook was missed (app was down)",
+        description = "Admin provides the Zoom meeting ID. Backend fetches the recording URL from Zoom API " +
+                      "and runs the same download → Bunny upload flow as the normal webhook. " +
+                      "Use this as a fallback when the app was down during a live class. " +
+                      "If the meeting is not in our system (class ran directly from Zoom), also provide batchId."
+    )
+    public ResponseEntity<ApiResponse<RecordingResponse>> manualRecording(
+            @Valid @RequestBody ManualRecordingRequest request) {
+        RecordingResponse response = recordingService.createManualRecording(request);
+        recordingService.processRecordingAsync(response.getId());
+        return ResponseEntity.ok(ApiResponse.success(
+                "Recording queued for processing. It will be AVAILABLE in ~15–30 minutes.", response));
+    }
+
+    @PostMapping("/recordings/{recordingId}/retry")
+    @Operation(
+        summary = "Retry a FAILED recording",
+        description = "Re-fetches a fresh Zoom download URL (the stored token may be expired) " +
+                      "and re-runs the download → Bunny upload pipeline. " +
+                      "Only recordings with status=FAILED can be retried."
+    )
+    public ResponseEntity<ApiResponse<Void>> retryRecording(@PathVariable UUID recordingId) {
+        recordingService.retryFailedRecording(recordingId);
+        recordingService.processRecordingAsync(recordingId);
+        return ResponseEntity.ok(ApiResponse.success(
+                "Recording retry started. Check status in ~15–30 minutes.", null));
     }
 
     // ---------------------------------------------------------------
