@@ -268,6 +268,16 @@ public class MentorController {
         return ResponseEntity.ok(ApiResponse.success("Recordings fetched", recordings));
     }
 
+    @GetMapping("/recordings/{recordingId}/play")
+    @Operation(summary = "Get signed play URL for a recording (mentor — own classes only)",
+               description = "Returns a Bunny.net signed URL valid for 3 hours. " +
+                             "Only works for recordings from classes you conducted. " +
+                             "Call this fresh each time — do not cache the URL.")
+    public ResponseEntity<ApiResponse<PlayUrlResponse>> getPlayUrl(@PathVariable UUID recordingId) {
+        PlayUrlResponse response = recordingService.generateMentorPlayUrl(recordingId, currentMentor().getId());
+        return ResponseEntity.ok(ApiResponse.success("Play URL generated", response));
+    }
+
     // ---------------------------------------------------------------
     // Enquiries
     // ---------------------------------------------------------------

@@ -198,8 +198,7 @@ List all recordings for classes conducted by the logged-in mentor.
 ]
 ```
 
-> Mentor response includes `status` so they can see if processing is still in progress.  
-> Mentor does **not** get `bunnyVideoId` or `playUrl` — those are student-only.
+> `status` is included so mentor can see if a recording is still processing or failed.
 
 ---
 
@@ -211,6 +210,33 @@ List recordings for a specific batch (mentor view).
 **Role:** MENTOR
 
 **Response:** Same shape as mentor list above.
+
+---
+
+### 4a. `GET /api/mentor/recordings/{recordingId}/play`
+
+Get a signed play URL so the mentor can watch a recording from one of their own classes.
+
+**Auth:** Required  
+**Role:** MENTOR
+
+**Response `200 OK`:**
+```json
+{
+  "playUrl": "https://iframe.mediadelivery.net/embed/...",
+  "expiresIn": 10800
+}
+```
+
+**Error responses:**
+| Code | Meaning |
+|------|---------|
+| `403` | Recording is not from one of your classes |
+| `400` | Recording still processing or failed |
+| `410` | Recording has expired |
+| `404` | Recording not found |
+
+> Same embed flow as students — put `playUrl` in an `<iframe>`. URL valid 3 hours, call fresh each time.
 
 ---
 
@@ -226,6 +252,32 @@ List all recordings across all batches.
 **Role:** ADMIN
 
 **Response:** Same shape as mentor list, all batches included.
+
+---
+
+### 5a. `GET /api/admin/recordings/{recordingId}/play`
+
+Get a signed play URL so admin can watch any recording.
+
+**Auth:** Required  
+**Role:** ADMIN
+
+**Response `200 OK`:**
+```json
+{
+  "playUrl": "https://iframe.mediadelivery.net/embed/...",
+  "expiresIn": 10800
+}
+```
+
+**Error responses:**
+| Code | Meaning |
+|------|---------|
+| `400` | Recording still processing or failed |
+| `410` | Recording has expired |
+| `404` | Recording not found |
+
+> Same embed flow as students — put `playUrl` in an `<iframe>`. URL valid 3 hours, call fresh each time.
 
 ---
 

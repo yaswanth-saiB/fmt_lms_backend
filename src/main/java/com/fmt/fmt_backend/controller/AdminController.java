@@ -284,6 +284,16 @@ public class AdminController {
         return ResponseEntity.ok(ApiResponse.success("Recordings fetched", adminService.getAllRecordings()));
     }
 
+    @GetMapping("/recordings/{recordingId}/play")
+    @Operation(summary = "Get signed play URL for any recording (admin)",
+               description = "Returns a Bunny.net signed URL valid for 3 hours. " +
+                             "Admin can watch any recording regardless of batch or mentor. " +
+                             "Call this fresh each time — do not cache the URL.")
+    public ResponseEntity<ApiResponse<PlayUrlResponse>> getRecordingPlayUrl(@PathVariable UUID recordingId) {
+        PlayUrlResponse response = recordingService.generateAdminPlayUrl(recordingId);
+        return ResponseEntity.ok(ApiResponse.success("Play URL generated", response));
+    }
+
     @PostMapping("/recordings/manual")
     @Operation(
         summary = "Manually trigger a recording when the Zoom webhook was missed (app was down)",

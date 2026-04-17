@@ -586,6 +586,93 @@ public class RecordingService {
     }
 
     // =========================================================================
+    // MENTOR — get signed play URL (own classes only)
+    // =========================================================================
+
+    /**
+     * Generates a signed Bunny.net play URL for the mentor.
+     *
+     * Verifies the recording belongs to a class conducted by this mentor.
+     * Mentor can watch AVAILABLE recordings for any of their classes — no
+     * batch enrollment check (they're the teacher, not a student).
+     */
+    @Transactional(readOnly = true)
+    public PlayUrlResponse generateMentorPlayUrl(UUID recordingId, UUID mentorId) {
+        Recording recording = recordingRepository.findByIdWithMeeting(recordingId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "Recording not found"));
+
+        // Ownership — only the mentor who conducted the class can watch it
+        UUID conductingMentorId = recording.getMeeting().getMentor().getId();
+        if (!conductingMentorId.equals(mentorId)) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN,
+                    "This recording is not from one of your classes");
+        }
+
+        if (recording.getStatus() == RecordingStatus.PROCESSING ||
+                recording.getStatus() == RecordingStatus.FAILED) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Recording is not yet available (still processing)");
+        }
+        if (recording.getStatus() == RecordingStatus.EXPIRED ||
+                (recording.getExpiresAt() != null && recording.getExpiresAt().isBefore(LocalDateTime.now()))) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.GONE, "Recording has expired");
+        }
+        if (recording.getBunnyVideoId() == null) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Recording video ID is missing — contact support");
+        }
+
+        return PlayUrlResponse.builder()
+                .playUrl(buildSignedBunnyUrl(recording.getBunnyVideoId()))
+                .expiresIn(10800)
+                .build();
+    }
+
+    // =========================================================================
+    // ADMIN — get signed play URL (any recording)
+    // =========================================================================
+
+    /**
+     * Generates a signed Bunny.net play URL for admin.
+     *
+     * No ownership or enrollment check — admin can watch any recording.
+     * Still validates that the recording is AVAILABLE (not processing/expired).
+     */
+    @Transactional(readOnly = true)
+    public PlayUrlResponse generateAdminPlayUrl(UUID recordingId) {
+        Recording recording = recordingRepository.findById(recordingId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "Recording not found"));
+
+        if (recording.getStatus() == RecordingStatus.PROCESSING ||
+                recording.getStatus() == RecordingStatus.FAILED) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Recording is not yet available (status: " + recording.getStatus() + ")");
+        }
+        if (recording.getStatus() == RecordingStatus.EXPIRED ||
+                (recording.getExpiresAt() != null && recording.getExpiresAt().isBefore(LocalDateTime.now()))) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.GONE, "Recording has expired");
+        }
+        if (recording.getBunnyVideoId() == null) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Recording video ID is missing — contact support");
+        }
+
+        return PlayUrlResponse.builder()
+                .playUrl(buildSignedBunnyUrl(recording.getBunnyVideoId()))
+                .expiresIn(10800)
+                .build();
+    }
+
+    // =========================================================================
     // STUDENT — list available recordings for a batch
     // =========================================================================
 
