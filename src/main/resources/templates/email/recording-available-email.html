@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 0;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f0f2f5; padding: 40px 20px;">
+    <tr>
+        <td align="center">
+            <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 560px;">
+                <tr>
+                    <td style="background-color: #ffffff; border-radius: 10px; padding: 40px 36px; border: 1px solid #e2e6ea;">
+
+                        <!-- Icon -->
+                        <div style="text-align: center; margin-bottom: 24px;">
+                            <div style="display: inline-block; background-color: #e8f4ff; border-radius: 50%; width: 56px; height: 56px; line-height: 56px; text-align: center; font-size: 28px;">
+                                &#9654;
+                            </div>
+                        </div>
+
+                        <h2 style="color: #1a2b3c; margin-top: 0; margin-bottom: 8px; font-size: 22px; text-align: center;">
+                            Class Recording is Ready
+                        </h2>
+                        <p style="color: #888; font-size: 14px; text-align: center; margin: 0 0 28px;">
+                            <span th:text="${batchName}">April 2026 Batch</span>
+                        </p>
+
+                        <p style="color: #555; line-height: 1.6; margin: 0 0 8px;">
+                            Hi <span th:text="${firstName}">there</span>,
+                        </p>
+                        <p style="color: #555; line-height: 1.6; margin: 0 0 24px;">
+                            The recording for <strong th:text="${recordingTitle}">today's class</strong>
+                            is now available in the app. You can watch it at any time before access expires.
+                        </p>
+
+                        <!-- CTA button -->
+                        <div style="text-align: center; margin: 0 0 28px;">
+                            <a th:href="${recordingUrl}"
+                               style="background-color: #0066cc; color: #ffffff; padding: 13px 32px;
+                                      text-decoration: none; border-radius: 6px; font-size: 15px;
+                                      font-weight: bold; display: inline-block;">
+                                Watch Recording
+                            </a>
+                        </div>
+
+                        <p style="color: #999; font-size: 13px; line-height: 1.5; margin: 0 0 24px; text-align: center;">
+                            You'll need to log in to watch. The link above is only accessible to enrolled students.
+                        </p>
+
+                        <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;">
+
+                        <p style="font-size: 12px; color: #999; margin: 0 0 6px;">
+                            Need help? Email us at
+                            <a href="mailto:help@firstmilliontrade.com" style="color: #0066cc; text-decoration: none;">help@firstmilliontrade.com</a>
+                        </p>
+                        <p style="font-size: 12px; color: #bbb; margin: 0;">
+                            &copy; First Million Trade <span th:text="${year}">2026</span>
+                        </p>
+
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+</body>
+</html>

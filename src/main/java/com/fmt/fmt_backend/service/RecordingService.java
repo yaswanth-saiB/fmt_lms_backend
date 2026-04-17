@@ -1,6 +1,7 @@
 package com.fmt.fmt_backend.service;
 
 import com.fmt.fmt_backend.dto.ManualRecordingRequest;
+import com.fmt.fmt_backend.entity.BatchEnrollment;
 import com.fmt.fmt_backend.dto.PlayUrlResponse;
 import com.fmt.fmt_backend.dto.RecordingResponse;
 import com.fmt.fmt_backend.dto.StudentRecordingResponse;
@@ -52,6 +53,10 @@ public class RecordingService {
     private final BatchEnrollmentRepository batchEnrollmentRepository;
     private final RestTemplate restTemplate = new RestTemplate();
     private final ZoomService zoomService;
+    private final SendGridEmailService emailService;
+
+    @Value("${app.frontend-url}")
+    private String frontendUrl;
 
     @Value("${zoom.webhook-secret}")
     private String zoomWebhookSecret;
@@ -409,6 +414,7 @@ public class RecordingService {
             recording.setStatus(RecordingStatus.AVAILABLE);
             recordingRepository.save(recording);
             log.info("Recording {} is now AVAILABLE (Bunny ready)", recording.getId());
+            notifyRecordingAvailable(recording);
         } else if (status == 5) {
             // Bunny status 5 = error
             recording.setStatus(RecordingStatus.FAILED);
@@ -836,6 +842,54 @@ public class RecordingService {
     // =========================================================================
     // Internal helpers
     // =========================================================================
+
+    /**
+     * Sends "recording is ready" emails to all enrolled students and the mentor.
+     *
+     * Called after Bunny marks the recording AVAILABLE.
+     * Each email is fired with @Async in SendGridEmailService — non-blocking.
+     *
+     * The recording URL points to the app's batch recordings page, which requires
+     * login. Sharing the link with non-members gives them a login wall — safe.
+     */
+    private void notifyRecordingAvailable(Recording recording) {
+        try {
+            Batch batch = recording.getBatch();
+            String recordingTitle = recording.getTitle();
+            String batchName = batch.getName();
+            // Deep link to the batch recordings tab in the app — requires login
+            String recordingUrl = frontendUrl + "/dashboard/recordings?batchId=" + batch.getId();
+
+            // Enrolled students
+            List<BatchEnrollment> enrollments = batchEnrollmentRepository.findByBatchAndIsActiveTrue(batch);
+            for (BatchEnrollment enrollment : enrollments) {
+                com.fmt.fmt_backend.entity.User student = enrollment.getStudent();
+                emailService.sendRecordingAvailableEmail(
+                        student.getEmail(),
+                        student.getFirstName(),
+                        recordingTitle,
+                        batchName,
+                        recordingUrl);
+            }
+            log.info("Recording available emails queued for {} student(s) in batch {}",
+                    enrollments.size(), batchName);
+
+            // Conducting mentor
+            com.fmt.fmt_backend.entity.User mentor = recording.getMeeting().getMentor();
+            emailService.sendRecordingAvailableEmail(
+                    mentor.getEmail(),
+                    mentor.getFirstName(),
+                    recordingTitle,
+                    batchName,
+                    recordingUrl);
+            log.info("Recording available email queued for mentor {}", mentor.getEmail());
+
+        } catch (Exception e) {
+            // Non-fatal — recording is already AVAILABLE; email failure must not roll back anything
+            log.error("Failed to send recording available notifications for recording {}: {}",
+                    recording.getId(), e.getMessage());
+        }
+    }
 
     @Transactional
     protected void markFailed(UUID recordingId, String reason) {

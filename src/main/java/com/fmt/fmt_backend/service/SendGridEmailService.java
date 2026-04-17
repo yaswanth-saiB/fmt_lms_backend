@@ -145,6 +145,24 @@ public class SendGridEmailService {
     }
 
     @Async
+    public void sendRecordingAvailableEmail(String to, String firstName,
+                                            String recordingTitle, String batchName,
+                                            String recordingUrl) {
+        SenderInfo sender = senderMap.get(EmailType.WELCOME); // noreply-info@firstmilliontrade.com
+        String subject = "Recording Available — " + recordingTitle;
+
+        Context ctx = new Context();
+        ctx.setVariable("firstName",      firstName);
+        ctx.setVariable("recordingTitle", recordingTitle);
+        ctx.setVariable("batchName",      batchName);
+        ctx.setVariable("recordingUrl",   recordingUrl);
+        ctx.setVariable("year",           LocalDateTime.now().getYear());
+        String htmlContent = templateEngine.process("email/recording-available-email", ctx);
+
+        sendEmail(to, subject, htmlContent, sender, EmailType.WELCOME);
+    }
+
+    @Async
     public void sendEnquiryNotification(Enquiry enquiry) {
         SenderInfo sender = senderMap.get(EmailType.ENQUIRY);
         String subject = "New Enquiry Received - First Million Trade";
