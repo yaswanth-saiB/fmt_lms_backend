@@ -83,8 +83,12 @@ public class DeviceService {
             existing.setLastActiveAt(LocalDateTime.now());
             existing.setIpAddress(getClientIp(request));
             existing.setUserAgent(request.getHeader("User-Agent"));
-            log.info("🔄 Existing device updated: {}", existing.getId());
-            return deviceRepository.save(existing);
+            DeviceEntity saved = deviceRepository.save(existing);
+            log.info("🔄 Existing device updated: {}", saved.getId());
+            // Enforce limit for returning devices too — if another device is still
+            // active and we're over the limit, revoke the oldest one now.
+            enforceDeviceLimit(user, saved);
+            return saved;
         }
 
         // New device

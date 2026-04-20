@@ -24,6 +24,7 @@ spring:
 
   server:
     port: ${PORT:8080}  # Railway injects PORT
+    forward-headers-strategy: native  # trust X-Forwarded-For from Nginx — makes request.getRemoteAddr() return real client IP
 
   # ==========================================
   # JPA CONFIGURATION
@@ -247,6 +248,18 @@ seed:
     last-name: ${ADMIN_SEED_LAST_NAME:First Million Trade}
 
 # ============================================
+# ACTUATOR — only /actuator/health exposed
+# ============================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+# ============================================
 # LOGGING
 # ============================================
 logging:
@@ -254,5 +267,7 @@ logging:
     com.tradingapp: DEBUG
     org.springframework.security: INFO
     org.springframework.mail: DEBUG
+    # Suppress 404 NoResourceFoundException — these are bot scans, not real errors
+    org.springframework.web.servlet.resource: OFF
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"

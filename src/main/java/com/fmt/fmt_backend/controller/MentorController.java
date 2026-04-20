@@ -9,6 +9,8 @@ import com.fmt.fmt_backend.repository.BatchEnrollmentRepository;
 import com.fmt.fmt_backend.repository.BatchRepository;
 import com.fmt.fmt_backend.repository.CourseRepository;
 import com.fmt.fmt_backend.repository.MeetingRepository;
+import com.fmt.fmt_backend.enums.UserRole;
+import com.fmt.fmt_backend.service.AdminService;
 import com.fmt.fmt_backend.service.AuthService;
 import com.fmt.fmt_backend.service.BatchService;
 import com.fmt.fmt_backend.service.CourseService;
@@ -33,6 +35,7 @@ import java.util.UUID;
 @SecurityRequirement(name = "bearerAuth")
 public class MentorController {
 
+    private final AdminService adminService;
     private final AuthService authService;
     private final CourseService courseService;
     private final BatchService batchService;
@@ -77,6 +80,22 @@ public class MentorController {
                 .build();
 
         return ResponseEntity.ok(ApiResponse.success("Dashboard loaded", dashboard));
+    }
+
+    // ---------------------------------------------------------------
+    // User Management (mentor can create STUDENT or MENTOR only)
+    // ---------------------------------------------------------------
+
+    @PostMapping("/users")
+    @Operation(summary = "Create a student or mentor account — ADMIN role is not allowed here")
+    public ResponseEntity<ApiResponse<UserResponse>> createUser(
+            @Valid @RequestBody CreateUserRequest request) {
+        if (request.getRole() == UserRole.ADMIN) {
+            return ResponseEntity.status(403)
+                    .body(ApiResponse.error("Mentors cannot create admin accounts"));
+        }
+        UserResponse user = adminService.createUser(request);
+        return ResponseEntity.ok(ApiResponse.success("User created successfully", user));
     }
 
     // ---------------------------------------------------------------

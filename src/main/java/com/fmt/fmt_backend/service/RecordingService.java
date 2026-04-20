@@ -379,9 +379,9 @@ public class RecordingService {
         streamZoomToBunny(zoomDownloadUrl, bunnyVideoId, recordingId);
         log.info("Video uploaded to Bunny for recording={}", recordingId);
 
-        // ---- Step 4: Delete recording from Zoom Cloud to stay within storage limits ----
-        deleteZoomRecording(zoomMeetingId);
-        log.info("Zoom recording deleted for meeting={}", zoomMeetingId);
+        // Zoom deletion is deferred to handleBunnyWebhook (status=4) — only delete after
+        // Bunny confirms encoding is successful. If Bunny fails, admin needs to retry
+        // which re-fetches from Zoom, so the Zoom copy must still be there.
     }
 
     // =========================================================================
@@ -411,10 +411,22 @@ public class RecordingService {
 
         if (status == 4) {
             // Bunny status 4 = ready
+            if (recording.getStatus() == RecordingStatus.AVAILABLE) {
+                log.info("Recording {} already AVAILABLE — ignoring duplicate Bunny webhook", recording.getId());
+                return;
+            }
             recording.setStatus(RecordingStatus.AVAILABLE);
             recordingRepository.save(recording);
             log.info("Recording {} is now AVAILABLE (Bunny ready)", recording.getId());
             notifyRecordingAvailable(recording);
+            // Delete from Zoom now that Bunny encoding is confirmed successful.
+            // Doing it here (not after upload) ensures we still have the Zoom source
+            // available if Bunny encoding had failed and admin needed to retry.
+            String zoomMeetingId = recording.getMeeting() != null
+                    ? recording.getMeeting().getZoomMeetingId() : null;
+            if (zoomMeetingId != null) {
+                deleteZoomRecording(zoomMeetingId);
+            }
         } else if (status == 5) {
             // Bunny status 5 = error
             recording.setStatus(RecordingStatus.FAILED);

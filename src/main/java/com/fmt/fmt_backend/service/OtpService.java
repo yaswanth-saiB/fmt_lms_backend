@@ -85,7 +85,7 @@ public class OtpService {
         return otp;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = RuntimeException.class)
     public boolean verifyOtp(String identifier, String otpCode, OtpEntity.OtpType type) {
         Optional<OtpEntity> otpOpt = otpRepository.findTopByIdentifierAndTypeAndVerifiedFalseOrderByCreatedAtDesc(
                 identifier, type);

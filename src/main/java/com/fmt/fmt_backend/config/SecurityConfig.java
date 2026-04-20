@@ -46,7 +46,14 @@ public class SecurityConfig {
                 // Exception handling - remove custom entry point for now
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, authException) -> {
-                            log.warn("🔐 Authentication failed: {} {}", request.getMethod(), request.getRequestURI());
+                            String uri = request.getRequestURI();
+                            // Only log real API auth failures — suppress bot scanner noise
+                            // (bots probe for .env, secrets.yml, actuator/env, etc.)
+                            if (uri.startsWith("/api/")) {
+                                log.warn("🔐 Authentication failed: {} {}", request.getMethod(), uri);
+                            } else {
+                                log.debug("🔐 Authentication failed (bot scan?): {} {}", request.getMethod(), uri);
+                            }
                             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                             response.setContentType("application/json");
                             response.getWriter().write("{\"success\": false, \"message\": \"Authentication required\"}");
@@ -72,7 +79,7 @@ public class SecurityConfig {
                         // Docs & infra
                         .requestMatchers("/swagger-ui/**").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
+                        .requestMatchers("/actuator/health").permitAll()
                         // Testing
                         .requestMatchers("/api/test/**").permitAll()
                         .requestMatchers("/api/public/**").permitAll()

@@ -142,6 +142,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return request.getMethod().equals("OPTIONS");
+        if (request.getMethod().equals("OPTIONS")) return true;
+
+        String path = request.getServletPath();
+
+        // Public endpoints — skip filter entirely so a stale cookie from a
+        // previously logged-in session never blocks these requests.
+        return path.startsWith("/api/auth/login")
+            || path.startsWith("/api/auth/signup")
+            || path.startsWith("/api/auth/forgot-password")
+            || path.startsWith("/api/auth/reset-password")
+            || path.startsWith("/api/auth/token/refresh")
+            || path.startsWith("/api/auth/token/rotate")
+            || path.startsWith("/api/enquiry")
+            || path.startsWith("/api/webhook")
+            || path.startsWith("/api/test")
+            || path.startsWith("/api/public")
+            || path.startsWith("/swagger-ui")
+            || path.startsWith("/v3/api-docs")
+            || path.equals("/actuator/health");
     }
 }
