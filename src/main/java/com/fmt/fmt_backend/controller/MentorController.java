@@ -1,6 +1,8 @@
 package com.fmt.fmt_backend.controller;
 
 import com.fmt.fmt_backend.dto.*;
+import com.fmt.fmt_backend.dto.AdminSendOtpRequest;
+import com.fmt.fmt_backend.dto.AdminVerifyAndCreateRequest;
 import com.fmt.fmt_backend.dto.RescheduleMeetingRequest;
 import com.fmt.fmt_backend.entity.Enquiry;
 import com.fmt.fmt_backend.enums.BatchStatus;
@@ -83,19 +85,31 @@ public class MentorController {
     }
 
     // ---------------------------------------------------------------
-    // User Management (mentor can create STUDENT or MENTOR only)
+    // User Management (mentor can create STUDENT or MENTOR only — 2-step OTP flow)
     // ---------------------------------------------------------------
 
-    @PostMapping("/users")
-    @Operation(summary = "Create a student or mentor account — ADMIN role is not allowed here")
-    public ResponseEntity<ApiResponse<UserResponse>> createUser(
-            @Valid @RequestBody CreateUserRequest request) {
+    @PostMapping("/users/send-otp")
+    @Operation(summary = "Step 1: Send OTP to email for verified user registration (mentor)")
+    public ResponseEntity<ApiResponse<Void>> sendRegistrationOtp(
+            @Valid @RequestBody AdminSendOtpRequest request) {
+        adminService.adminSendRegistrationOtp(request);
+        boolean hasMobile = request.getPhoneNumber() != null && !request.getPhoneNumber().isBlank();
+        String msg = hasMobile
+                ? "OTP sent to email and mobile. Both must be verified."
+                : "OTP sent to email.";
+        return ResponseEntity.ok(ApiResponse.success(msg, null));
+    }
+
+    @PostMapping("/users/verify-and-create")
+    @Operation(summary = "Step 2: Verify OTP and create user account — ADMIN role not allowed")
+    public ResponseEntity<ApiResponse<UserResponse>> verifyAndCreateUser(
+            @Valid @RequestBody AdminVerifyAndCreateRequest request) {
         if (request.getRole() == UserRole.ADMIN) {
             return ResponseEntity.status(403)
                     .body(ApiResponse.error("Mentors cannot create admin accounts"));
         }
-        UserResponse user = adminService.createUser(request);
-        return ResponseEntity.ok(ApiResponse.success("User created successfully", user));
+        return ResponseEntity.ok(ApiResponse.success("User created successfully",
+                adminService.adminVerifyAndCreateUser(request)));
     }
 
     // ---------------------------------------------------------------

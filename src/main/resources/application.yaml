@@ -1,6 +1,10 @@
 # ============================================
 # SPRING BOOT APPLICATION CONFIGURATION
 # ============================================
+server:
+  port: ${PORT:8080}
+  forward-headers-strategy: native  # trust X-Forwarded-For from Nginx — real client IP in logs
+
 spring:
   application:
     name: fmt-backend
@@ -22,9 +26,6 @@ spring:
 #    password: ${PGPASSWORD}
 #    driver-class-name: org.postgresql.Driver
 
-  server:
-    port: ${PORT:8080}  # Railway injects PORT
-    forward-headers-strategy: native  # trust X-Forwarded-For from Nginx — makes request.getRemoteAddr() return real client IP
 
   # ==========================================
   # JPA CONFIGURATION
@@ -264,7 +265,7 @@ management:
 # ============================================
 logging:
   level:
-    com.tradingapp: DEBUG
+    com.fmt.fmt_backend: DEBUG
     org.springframework.security: INFO
     org.springframework.mail: DEBUG
     # Suppress 404 NoResourceFoundException — these are bot scans, not real errors
