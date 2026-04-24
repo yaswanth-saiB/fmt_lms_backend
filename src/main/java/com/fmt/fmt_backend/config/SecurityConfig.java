@@ -76,6 +76,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/forgot-password").permitAll()
                         .requestMatchers("/api/auth/reset-password").permitAll()
                         .requestMatchers("/api/enquiry/submit").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/reviews").permitAll()
                         // Docs & infra
                         .requestMatchers("/swagger-ui/**").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()

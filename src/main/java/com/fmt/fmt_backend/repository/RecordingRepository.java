@@ -16,6 +16,8 @@ import java.util.UUID;
 @Repository
 public interface RecordingRepository extends JpaRepository<Recording, UUID> {
 
+    List<Recording> findAllByOrderByCreatedAtDesc();
+
     List<Recording> findByBatchAndStatusOrderByCreatedAtDesc(Batch batch, RecordingStatus status);
 
     // Used by mentor/admin to list all recordings for a batch (all statuses)

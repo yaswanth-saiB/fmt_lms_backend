@@ -11,6 +11,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.server.ResponseStatusException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -74,17 +75,47 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.LOCKED).body(response);
     }
 
-    // Handle all other unexpected errors
+    // Handle ResponseStatusException (404, 400, 409, 403 etc thrown from services)
+    // These are expected business errors — log as WARN, return the correct status + message
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiResponse<String>> handleResponseStatusException(
+            ResponseStatusException ex) {
+
+        int statusCode = ex.getStatusCode().value();
+        // Strip the status prefix Zoom adds: "409 CONFLICT \"message\"" → "message"
+        String message = ex.getReason() != null ? ex.getReason() : ex.getMessage();
+
+        if (statusCode >= 500) {
+            log.error("💥 Server error {}: {}", statusCode, message);
+        } else {
+            log.warn("⚠️ Request rejected {}: {}", statusCode, message);
+        }
+
+        return ResponseEntity.status(ex.getStatusCode())
+                .body(ApiResponse.error(message));
+    }
+
+    // Handle RuntimeException thrown from service layer (business validation errors)
+    // e.g. "Email already registered", "OTP cooldown active"
+    // Log as WARN — these are expected, not system failures
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<ApiResponse<String>> handleRuntimeException(
+            RuntimeException ex) {
+
+        log.warn("⚠️ Business error: {}", ex.getMessage());
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
+    // Handle truly unexpected errors — log with full stack trace
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<String>> handleGlobalException(
             Exception ex, WebRequest request) {
 
         log.error("💥 Unexpected error: {}", ex.getMessage(), ex);
 
-        ApiResponse<String> response = ApiResponse.error(
-                "An unexpected error occurred. Please try again later."
-        );
-
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponse.error("An unexpected error occurred. Please try again later."));
     }
 }

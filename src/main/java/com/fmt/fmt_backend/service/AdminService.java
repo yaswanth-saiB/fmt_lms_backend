@@ -239,7 +239,7 @@ public class AdminService {
     }
 
     public List<RecordingResponse> getAllRecordings() {
-        return recordingRepository.findAll()
+        return recordingRepository.findAllByOrderByCreatedAtDesc()
                 .stream()
                 .map(r -> {
                     String courseName = null;

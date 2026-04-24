@@ -40,7 +40,7 @@ public class SendGridEmailService {
     private final Map<EmailType, SenderInfo> senderMap = new EnumMap<>(EmailType.class);
 
     public enum EmailType {
-        OTP, WELCOME, PROMO, SUPPORT, ADMIN, ENQUIRY
+        OTP, WELCOME, RECORDING, PROMO, SUPPORT, ADMIN, ENQUIRY
     }
 
     @lombok.Value
@@ -89,6 +89,13 @@ public class SendGridEmailService {
                 properties.getSenders().get("admin").getEmail(),
                 properties.getSenders().get("admin").getName(),
                 properties.getSenders().get("admin").isBccArchive()
+        ));
+
+        // RECORDING uses same sender as WELCOME (noreply-info@) but logged separately
+        senderMap.put(EmailType.RECORDING, new SenderInfo(
+                properties.getSenders().get("welcome").getEmail(),
+                properties.getSenders().get("welcome").getName(),
+                properties.getSenders().get("welcome").isBccArchive()
         ));
 
         // Add ENQUIRY type - using admin sender by default
@@ -148,7 +155,7 @@ public class SendGridEmailService {
     public void sendRecordingAvailableEmail(String to, String firstName,
                                             String recordingTitle, String batchName,
                                             String recordingUrl) {
-        SenderInfo sender = senderMap.get(EmailType.WELCOME); // noreply-info@firstmilliontrade.com
+        SenderInfo sender = senderMap.get(EmailType.RECORDING);
         String subject = "Recording Available — " + recordingTitle;
 
         Context ctx = new Context();
@@ -159,7 +166,7 @@ public class SendGridEmailService {
         ctx.setVariable("year",           LocalDateTime.now().getYear());
         String htmlContent = templateEngine.process("email/recording-available-email", ctx);
 
-        sendEmail(to, subject, htmlContent, sender, EmailType.WELCOME);
+        sendEmail(to, subject, htmlContent, sender, EmailType.RECORDING);
     }
 
     @Async

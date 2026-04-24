@@ -1,7 +1,9 @@
 package com.fmt.fmt_backend.controller;
 
 import com.fmt.fmt_backend.dto.*;
+import com.fmt.fmt_backend.service.BatchService;
 import com.fmt.fmt_backend.service.RecordingService;
+import com.fmt.fmt_backend.service.ReviewService;
 import com.fmt.fmt_backend.entity.Enquiry;
 import com.fmt.fmt_backend.enums.BatchStatus;
 import com.fmt.fmt_backend.enums.UserRole;
@@ -29,6 +31,8 @@ public class AdminController {
     private final EnquiryService enquiryService;
     private final com.fmt.fmt_backend.service.MeetingService meetingService;
     private final RecordingService recordingService;
+    private final BatchService batchService;
+    private final ReviewService reviewService;
 
     // ---------------------------------------------------------------
     // Dashboard
@@ -272,6 +276,18 @@ public class AdminController {
         return ResponseEntity.ok(ApiResponse.success("Batches fetched", adminService.getAllBatches()));
     }
 
+    @GetMapping("/courses/{courseId}/batches")
+    @Operation(summary = "List all batches for a specific course")
+    public ResponseEntity<ApiResponse<List<BatchResponse>>> getCourseBatches(@PathVariable UUID courseId) {
+        return ResponseEntity.ok(ApiResponse.success("Batches fetched", batchService.getBatchesForCourse(courseId)));
+    }
+
+    @GetMapping("/batches/{batchId}/recordings")
+    @Operation(summary = "List all recordings for a specific batch (all statuses, latest first)")
+    public ResponseEntity<ApiResponse<List<RecordingResponse>>> getBatchRecordings(@PathVariable UUID batchId) {
+        return ResponseEntity.ok(ApiResponse.success("Recordings fetched", recordingService.getAdminBatchRecordings(batchId)));
+    }
+
     @GetMapping("/classes")
     @Operation(summary = "List all classes (meetings) across all batches")
     public ResponseEntity<ApiResponse<List<MeetingResponse>>> getClasses() {
@@ -350,5 +366,57 @@ public class AdminController {
                 "Enquiry status updated",
                 enquiryService.updateStatus(enquiryId, request.getStatus())
         ));
+    }
+
+    // ---------------------------------------------------------------
+    // Reviews Management
+    // ---------------------------------------------------------------
+
+    @GetMapping("/reviews")
+    @Operation(summary = "List all reviews including inactive — for admin management panel")
+    public ResponseEntity<ApiResponse<List<ReviewResponse>>> getAllReviews() {
+        return ResponseEntity.ok(ApiResponse.success("Reviews fetched", reviewService.getAllReviews()));
+    }
+
+    @GetMapping("/reviews/{reviewId}")
+    @Operation(summary = "Get a single review by ID — for admin edit form")
+    public ResponseEntity<ApiResponse<ReviewResponse>> getReview(@PathVariable UUID reviewId) {
+        return ResponseEntity.ok(ApiResponse.success("Review fetched", reviewService.getReview(reviewId)));
+    }
+
+    @PostMapping("/reviews")
+    @Operation(summary = "Add a new review",
+               description = "Paste reviewer name, rating (1–5), review text, date, and optional photo URL. " +
+                             "Evicts the public homepage cache immediately.")
+    public ResponseEntity<ApiResponse<ReviewResponse>> createReview(
+            @Valid @RequestBody ReviewRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Review added", reviewService.createReview(request)));
+    }
+
+    @PutMapping("/reviews/{reviewId}")
+    @Operation(summary = "Update a review — also use this to re-activate a soft-deleted review (set isActive=true)",
+               description = "Pass isActive=false to hide, isActive=true to restore. Evicts homepage cache.")
+    public ResponseEntity<ApiResponse<ReviewResponse>> updateReview(
+            @PathVariable UUID reviewId,
+            @Valid @RequestBody ReviewRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Review updated", reviewService.updateReview(reviewId, request)));
+    }
+
+    @DeleteMapping("/reviews/{reviewId}")
+    @Operation(summary = "Soft-delete a review — sets is_active=false, hidden from homepage",
+               description = "To restore, use PUT /reviews/{id} with isActive=true.")
+    public ResponseEntity<ApiResponse<Void>> deleteReview(@PathVariable UUID reviewId) {
+        reviewService.deleteReview(reviewId);
+        return ResponseEntity.ok(ApiResponse.success("Review hidden from homepage", null));
+    }
+
+    @PutMapping("/reviews/reorder")
+    @Operation(summary = "Reorder reviews — send full list with updated displayOrder values",
+               description = "Body: [ { id: uuid, displayOrder: 1 }, { id: uuid, displayOrder: 2 }, ... ]. " +
+                             "Lower displayOrder = shown first. Evicts homepage cache.")
+    public ResponseEntity<ApiResponse<Void>> reorderReviews(
+            @Valid @RequestBody List<ReviewReorderRequest> items) {
+        reviewService.reorderReviews(items);
+        return ResponseEntity.ok(ApiResponse.success("Reviews reordered", null));
     }
 }

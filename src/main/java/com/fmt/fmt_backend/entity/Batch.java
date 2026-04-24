@@ -42,6 +42,9 @@ public class Batch extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Column(name = "bunny_collection_id")
+    private String bunnyCollectionId;
+
     @PrePersist
     public void prePersist() {
         if (status == null) status = BatchStatus.UPCOMING;

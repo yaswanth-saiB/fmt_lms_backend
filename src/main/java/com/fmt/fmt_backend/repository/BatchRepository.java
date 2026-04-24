@@ -9,10 +9,15 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface BatchRepository extends JpaRepository<Batch, UUID> {
+
+    // Eagerly loads course so batch.getCourse() works outside a transaction
+    @Query("SELECT b FROM Batch b JOIN FETCH b.course WHERE b.id = :id")
+    Optional<Batch> findByIdWithCourse(@Param("id") UUID id);
 
     List<Batch> findByCourseOrderByCreatedAtDesc(Course course);
 

@@ -367,10 +367,21 @@ public class RecordingService {
         // instead of creating another orphan in Bunny.
         String bunnyVideoId = r.getBunnyVideoId();
         if (bunnyVideoId == null) {
-            bunnyVideoId = createBunnyVideoObject(title);
+            // Get or create the Bunny collection for this batch (lazy — created on first recording)
+            // Use getId() on the proxy — safe, Hibernate always has the ID without initializing
+            UUID batchId = r.getBatch().getId();
+            String collectionId = null;
+            try {
+                collectionId = getOrCreateBatchCollection(batchId);
+            } catch (Exception e) {
+                log.warn("Could not get/create Bunny collection for batch {} — video will be uncollected: {}",
+                        batchId, e.getMessage());
+            }
+            bunnyVideoId = createBunnyVideoObject(title, collectionId);
             r.setBunnyVideoId(bunnyVideoId);
             recordingRepository.save(r); // persist early so retries pick up the same videoId
-            log.info("Bunny video object created: videoId={} for recording={}", bunnyVideoId, recordingId);
+            log.info("Bunny video object created: videoId={} collectionId={} for recording={}",
+                    bunnyVideoId, collectionId, recordingId);
         } else {
             log.info("Reusing existing Bunny videoId={} for recording={} (retry)", bunnyVideoId, recordingId);
         }
@@ -478,12 +489,16 @@ public class RecordingService {
     // =========================================================================
 
     @SuppressWarnings("unchecked")
-    private String createBunnyVideoObject(String title) {
+    private String createBunnyVideoObject(String title, String collectionId) {
         HttpHeaders headers = new HttpHeaders();
         headers.set("AccessKey", bunnyApiKey);
         headers.setContentType(MediaType.APPLICATION_JSON);
 
-        Map<String, String> body = Map.of("title", title);
+        Map<String, String> body = new java.util.HashMap<>();
+        body.put("title", title);
+        if (collectionId != null && !collectionId.isBlank()) {
+            body.put("collectionId", collectionId);
+        }
 
         ResponseEntity<Map> response = restTemplate.exchange(
                 BUNNY_API_BASE + bunnyLibraryId + "/videos",
@@ -500,6 +515,64 @@ public class RecordingService {
             throw new RuntimeException("Bunny create video response missing 'guid'");
         }
         return guid.toString();
+    }
+
+    /**
+     * Returns the Bunny collection ID for this batch, creating one if it doesn't exist yet.
+     *
+     * Collection name format: "{courseName} - {batchName}"
+     * e.g. "Technical Analysis - Batch 1004"
+     *
+     * The collectionId is stored on the Batch entity so subsequent recordings
+     * in the same batch reuse the same collection without extra API calls.
+     *
+     * Takes batchId (not Batch) because this is called from an @Async thread where
+     * the Batch passed from processRecording is a detached lazy proxy with no session.
+     * Using findByIdWithCourse does a JOIN FETCH so course.getTitle() works in memory
+     * after the repo transaction closes — each batchRepository call opens its own transaction.
+     */
+    @SuppressWarnings("unchecked")
+    private String getOrCreateBatchCollection(UUID batchId) {
+        // Re-fetch batch with course eagerly loaded — avoids LazyInitializationException
+        Batch batch = batchRepository.findByIdWithCourse(batchId)
+                .orElseThrow(() -> new RuntimeException("Batch not found: " + batchId));
+
+        if (batch.getBunnyCollectionId() != null && !batch.getBunnyCollectionId().isBlank()) {
+            return batch.getBunnyCollectionId();
+        }
+
+        // Build collection name
+        String courseName = batch.getCourse() != null ? batch.getCourse().getTitle() : null;
+        String collectionName = (courseName != null ? courseName + " - " : "") + batch.getName();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("AccessKey", bunnyApiKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, String> body = Map.of("name", collectionName);
+
+        ResponseEntity<Map> response = restTemplate.exchange(
+                BUNNY_API_BASE + bunnyLibraryId + "/collections",
+                HttpMethod.POST,
+                new HttpEntity<>(body, headers),
+                Map.class);
+
+        if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+            log.warn("Failed to create Bunny collection for batch {} — videos will be uncollected", batch.getId());
+            return null;
+        }
+
+        Object guid = response.getBody().get("guid");
+        if (guid == null) {
+            log.warn("Bunny collection response missing 'guid' for batch {}", batch.getId());
+            return null;
+        }
+
+        String collectionId = guid.toString();
+        batch.setBunnyCollectionId(collectionId);
+        batchRepository.save(batch);
+        log.info("Created Bunny collection '{}' (id={}) for batch {}", collectionName, collectionId, batch.getId());
+        return collectionId;
     }
 
     /**
@@ -790,6 +863,21 @@ public class RecordingService {
     }
 
     public List<RecordingResponse> getMentorBatchRecordings(UUID batchId, UUID mentorId) {
+        Batch batch = batchRepository.findById(batchId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "Batch not found"));
+
+        return recordingRepository.findByBatchOrderByCreatedAtDesc(batch)
+                .stream()
+                .map(this::toMentorRecordingResponse)
+                .toList();
+    }
+
+    // =========================================================================
+    // ADMIN — list recordings for a specific batch (all statuses)
+    // =========================================================================
+
+    public List<RecordingResponse> getAdminBatchRecordings(UUID batchId) {
         Batch batch = batchRepository.findById(batchId)
                 .orElseThrow(() -> new ResponseStatusException(
                         org.springframework.http.HttpStatus.NOT_FOUND, "Batch not found"));

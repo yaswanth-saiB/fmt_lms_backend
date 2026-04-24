@@ -5,6 +5,7 @@ import com.fmt.fmt_backend.entity.User;
 import com.fmt.fmt_backend.service.AuthService;
 import com.fmt.fmt_backend.service.BatchService;
 import com.fmt.fmt_backend.service.MeetingService;
+import com.fmt.fmt_backend.service.RecordingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,6 +26,7 @@ public class StudentController {
     private final AuthService authService;
     private final BatchService batchService;
     private final MeetingService meetingService;
+    private final RecordingService recordingService;
 
     // ---------------------------------------------------------------
     // Dashboard
@@ -90,6 +92,30 @@ public class StudentController {
     public ResponseEntity<ApiResponse<MeetingResponse>> getJoinUrl(@PathVariable UUID meetingId) {
         MeetingResponse meeting = meetingService.getJoinUrlForStudent(meetingId, currentStudent().getId());
         return ResponseEntity.ok(ApiResponse.success("Join URL ready", meeting));
+    }
+
+    // ---------------------------------------------------------------
+    // Recordings
+    // ---------------------------------------------------------------
+
+    @GetMapping("/batches/{batchId}/recordings")
+    @Operation(summary = "List available recordings for a batch I'm enrolled in",
+               description = "Only returns AVAILABLE recordings. Student must be enrolled in the batch. Latest first.")
+    public ResponseEntity<ApiResponse<List<StudentRecordingResponse>>> getBatchRecordings(
+            @PathVariable UUID batchId) {
+        List<StudentRecordingResponse> recordings =
+                recordingService.getAvailableRecordingsForBatch(batchId, currentStudent());
+        return ResponseEntity.ok(ApiResponse.success("Recordings fetched", recordings));
+    }
+
+    @GetMapping("/recordings/{recordingId}/play")
+    @Operation(summary = "Get signed play URL for a recording",
+               description = "Returns a Bunny.net signed URL valid for 3 hours. " +
+                             "Student must be enrolled in the recording's batch. " +
+                             "Call this fresh each time — do not cache the URL.")
+    public ResponseEntity<ApiResponse<PlayUrlResponse>> getPlayUrl(@PathVariable UUID recordingId) {
+        PlayUrlResponse response = recordingService.generatePlayUrl(recordingId, currentStudent());
+        return ResponseEntity.ok(ApiResponse.success("Play URL generated", response));
     }
 
     // ---------------------------------------------------------------
