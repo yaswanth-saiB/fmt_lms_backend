@@ -9,13 +9,13 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class EmailService {
 
-    private final SendGridEmailService sendGridEmailService;
+    private final ResendEmailService resendEmailService;
 
     public void sendOtpEmail(String to, String otp, int expiryMinutes) {
-        sendGridEmailService.sendOtpEmail(to, otp, expiryMinutes);
+        resendEmailService.sendOtpEmail(to, otp, expiryMinutes);
     }
 
     public void sendWelcomeEmail(String to, String firstName, String role) {
-        sendGridEmailService.sendWelcomeEmail(to, firstName, role);
+        resendEmailService.sendWelcomeEmail(to, firstName, role);
     }
 }

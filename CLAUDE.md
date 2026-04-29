@@ -172,18 +172,17 @@ POST /api/auth/signup/simple   — FOR TESTING ONLY — sets cookies
 
 ---
 
-## Email (SendGrid)
-All transactional email goes via SendGrid API (not SMTP). The 5 Hostinger mailboxes are SMTP
-configs used as sender identities — all actual delivery is via SendGrid.
+## Email (Resend)
+All transactional email goes via Resend API. Verified sending domain: `mail.firstmilliontrade.com`.
 
 | EmailType | Sender | BCC Archive | Used For |
 |-----------|--------|-------------|----------|
-| OTP | noreply-otp@firstmilliontrade.com | No | Login + signup OTPs |
-| WELCOME | noreply-info@firstmilliontrade.com | Yes | After successful registration |
-| PROMO | noreply-info@firstmilliontrade.com | Yes | Marketing |
-| SUPPORT | help@firstmilliontrade.com | No | Support replies |
-| ADMIN | admin@firstmilliontrade.com | Yes | Internal notifications |
-| ENQUIRY | admin@firstmilliontrade.com | No | Enquiry form → admin |
+| OTP | noreply-otp@mail.firstmilliontrade.com | No | Login + signup OTPs |
+| WELCOME | noreply-info@mail.firstmilliontrade.com | Yes | After successful registration |
+| PROMO | noreply-info@mail.firstmilliontrade.com | Yes | Marketing |
+| SUPPORT | help@mail.firstmilliontrade.com | No | Support replies |
+| ADMIN | admin@mail.firstmilliontrade.com | Yes | Internal notifications |
+| ENQUIRY | admin@mail.firstmilliontrade.com | No | Enquiry form → admin |
 
 > All email methods are `@Async` — they do not block the request thread.
 
@@ -254,10 +253,10 @@ APP_BASE_URL                        (https://api.firstmilliontrade.com in prod)
 APP_FRONTEND_URL                    (https://firstmilliontrade.com in prod)
 APP_ENVIRONMENT                     (development | production)
 
-# SendGrid
-SENDGRID_API_KEY
-SENDGRID_ENABLED                    (default true)
-SENDGRID_ARCHIVE_ENABLED            (default true)
+# Resend
+RESEND_API_KEY
+RESEND_ENABLED                      (default true)
+RESEND_ARCHIVE_ENABLED              (default true)
 
 # Twilio
 TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER

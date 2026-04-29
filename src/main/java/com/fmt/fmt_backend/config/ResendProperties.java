@@ -8,21 +8,21 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Component
-@ConfigurationProperties(prefix = "sendgrid")
+@ConfigurationProperties(prefix = "resend")
 @Data
-public class SendGridProperties {
+public class ResendProperties {
 
     private String apiKey;
     private boolean enabled = true;
-    private String adminEmail;  // Add this field
+    private String adminEmail;
     private ArchiveConfig archive = new ArchiveConfig();
     private Map<String, SenderConfig> senders = new HashMap<>();
 
     @Data
     public static class ArchiveConfig {
         private boolean enabled = true;
-        private String email = "archive@firstmilliontrade.com";
-        private String name = "FNT Archive";
+        private String email = "archive@mail.firstmilliontrade.com";
+        private String name = "FMT Archive";
     }
 
     @Data

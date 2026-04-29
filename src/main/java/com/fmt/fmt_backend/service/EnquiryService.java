@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class EnquiryService {
 
     private final EnquiryRepository enquiryRepository;
-    private final SendGridEmailService emailService;
+    private final ResendEmailService emailService;
     private final HttpServletRequest request;
 
     @Transactional

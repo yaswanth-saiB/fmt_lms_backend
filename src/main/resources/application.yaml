@@ -105,43 +105,43 @@ sms:
   country-code: IN
 
 # ============================================
-# SENDGRID CONFIGURATION
+# RESEND CONFIGURATION
 # ============================================
-sendgrid:
-  api-key: ${SENDGRID_API_KEY}
-  enabled: ${SENDGRID_ENABLED:true}
-  admin-email: ${ADMIN_EMAIL:connect.firstmilliontrade@gmail.com}
-  
+resend:
+  api-key: ${RESEND_API_KEY}
+  enabled: ${RESEND_ENABLED:true}
+  admin-email: ${ADMIN_EMAIL:admin@firstmilliontrade.com}
+
   # Archive/BCC settings
   archive:
-    enabled: ${SENDGRID_ARCHIVE_ENABLED:true}
-    email: ${ARCHIVE_EMAIL:archive@firstmilliontrade.com}
+    enabled: ${RESEND_ARCHIVE_ENABLED:true}
+    email: ${ARCHIVE_EMAIL:archive@mail.firstmilliontrade.com}
     name: ${ARCHIVE_NAME:First Million Trade Archive}
 
   # Email senders configuration
   senders:
     otp:
-      email: ${OTP_FROM_EMAIL:noreply-otp@firstmilliontrade.com}
+      email: ${OTP_FROM_EMAIL:noreply-otp@mail.firstmilliontrade.com}
       name: ${OTP_FROM_NAME:First Million Trade}
       bcc-archive: ${OTP_BCC_ARCHIVE:false}
 
     welcome:
-      email: ${WELCOME_FROM_EMAIL:noreply-info@firstmilliontrade.com}
+      email: ${WELCOME_FROM_EMAIL:noreply-info@mail.firstmilliontrade.com}
       name: ${WELCOME_FROM_NAME:First Million Trade}
       bcc-archive: ${WELCOME_BCC_ARCHIVE:true}
 
     promo:
-      email: ${PROMO_FROM_EMAIL:noreply-info@firstmilliontrade.com}
+      email: ${PROMO_FROM_EMAIL:noreply-info@mail.firstmilliontrade.com}
       name: ${PROMO_FROM_NAME:First Million Trade}
       bcc-archive: ${PROMO_BCC_ARCHIVE:true}
 
     support:
-      email: ${SUPPORT_FROM_EMAIL:help@firstmilliontrade.com}
+      email: ${SUPPORT_FROM_EMAIL:help@mail.firstmilliontrade.com}
       name: ${SUPPORT_FROM_NAME:First Million Trade Support}
       bcc-archive: ${SUPPORT_BCC_ARCHIVE:false}
 
     admin:
-      email: ${ADMIN_FROM_EMAIL:admin@firstmilliontrade.com}
+      email: ${ADMIN_FROM_EMAIL:admin@mail.firstmilliontrade.com}
       name: ${ADMIN_FROM_NAME:First Million Trade Admin}
       bcc-archive: ${ADMIN_BCC_ARCHIVE:true}
 

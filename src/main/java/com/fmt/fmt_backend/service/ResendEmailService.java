@@ -1,42 +1,35 @@
 package com.fmt.fmt_backend.service;
 
-import com.fmt.fmt_backend.config.SendGridProperties;
+import com.fmt.fmt_backend.config.ResendProperties;
 import com.fmt.fmt_backend.entity.Enquiry;
-import com.sendgrid.Method;
-import com.sendgrid.Request;
-import com.sendgrid.Response;
-import com.sendgrid.SendGrid;
-import com.sendgrid.helpers.mail.Mail;
-import com.sendgrid.helpers.mail.objects.Content;
-import com.sendgrid.helpers.mail.objects.Email;
-import com.sendgrid.helpers.mail.objects.Personalization;
+import com.resend.Resend;
+import com.resend.core.exception.ResendException;
+import com.resend.services.emails.model.CreateEmailOptions;
+import com.resend.services.emails.model.CreateEmailResponse;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class SendGridEmailService {
+public class ResendEmailService {
 
-    private final SendGrid sendGrid;
-    private final SendGridProperties properties;
+    private final Resend resend;
+    private final ResendProperties properties;
     private final TemplateEngine templateEngine;
 
-    @Value("${sendgrid.enabled:true}")
     private boolean emailEnabled;
-
-    private Email archiveEmail;
+    private String archiveEmail;
     private final Map<EmailType, SenderInfo> senderMap = new EnumMap<>(EmailType.class);
 
     public enum EmailType {
@@ -52,103 +45,84 @@ public class SendGridEmailService {
 
     @PostConstruct
     public void init() {
-        // Create archive email if enabled
+        emailEnabled = properties.isEnabled();
+
         if (properties.getArchive().isEnabled()) {
-            archiveEmail = new Email(
-                    properties.getArchive().getEmail(),
-                    properties.getArchive().getName()
-            );
+            archiveEmail = properties.getArchive().getEmail();
         }
 
-        // Map each email type to its configuration
         senderMap.put(EmailType.OTP, new SenderInfo(
                 properties.getSenders().get("otp").getEmail(),
                 properties.getSenders().get("otp").getName(),
                 properties.getSenders().get("otp").isBccArchive()
         ));
-
         senderMap.put(EmailType.WELCOME, new SenderInfo(
                 properties.getSenders().get("welcome").getEmail(),
                 properties.getSenders().get("welcome").getName(),
                 properties.getSenders().get("welcome").isBccArchive()
         ));
-
         senderMap.put(EmailType.PROMO, new SenderInfo(
                 properties.getSenders().get("promo").getEmail(),
                 properties.getSenders().get("promo").getName(),
                 properties.getSenders().get("promo").isBccArchive()
         ));
-
         senderMap.put(EmailType.SUPPORT, new SenderInfo(
                 properties.getSenders().get("support").getEmail(),
                 properties.getSenders().get("support").getName(),
                 properties.getSenders().get("support").isBccArchive()
         ));
-
         senderMap.put(EmailType.ADMIN, new SenderInfo(
                 properties.getSenders().get("admin").getEmail(),
                 properties.getSenders().get("admin").getName(),
                 properties.getSenders().get("admin").isBccArchive()
         ));
-
-        // RECORDING uses same sender as WELCOME (noreply-info@) but logged separately
+        // RECORDING shares the welcome sender
         senderMap.put(EmailType.RECORDING, new SenderInfo(
                 properties.getSenders().get("welcome").getEmail(),
                 properties.getSenders().get("welcome").getName(),
                 properties.getSenders().get("welcome").isBccArchive()
         ));
-
-        // Add ENQUIRY type - using admin sender by default
+        // ENQUIRY uses admin sender without BCC
         senderMap.put(EmailType.ENQUIRY, new SenderInfo(
                 properties.getSenders().get("admin").getEmail(),
                 properties.getSenders().get("admin").getName(),
-                false // Don't BCC enquiries to archive
+                false
         ));
 
-        log.info("✅ SendGridEmailService initialized with {} sender types", senderMap.size());
+        log.info("✅ ResendEmailService initialized with {} sender types", senderMap.size());
     }
 
     @Async
     public void sendOtpEmail(String to, String otp, int expiryMinutes) {
         SenderInfo sender = senderMap.get(EmailType.OTP);
-        String subject = "Your First Million Trade Verification Code";
-        String htmlContent = buildOtpTemplate(otp, expiryMinutes);
-
-        sendEmail(to, subject, htmlContent, sender, EmailType.OTP);
+        sendEmail(to, "Your First Million Trade Verification Code",
+                buildOtpTemplate(otp, expiryMinutes), sender, EmailType.OTP);
     }
 
     @Async
     public void sendWelcomeEmail(String to, String firstName, String role) {
         SenderInfo sender = senderMap.get(EmailType.WELCOME);
-        String subject = "Welcome to First Million Trade, " + firstName + "!";
-        String htmlContent = buildWelcomeTemplate(firstName, role);
-
-        sendEmail(to, subject, htmlContent, sender, EmailType.WELCOME);
+        sendEmail(to, "Welcome to First Million Trade, " + firstName + "!",
+                buildWelcomeTemplate(firstName, role), sender, EmailType.WELCOME);
     }
 
     @Async
     public void sendPromotionalEmail(String to, String firstName, String campaign) {
         SenderInfo sender = senderMap.get(EmailType.PROMO);
-        String subject = "First Million Trade - " + campaign;
-        String htmlContent = buildPromoTemplate(firstName, campaign);
-
-        sendEmail(to, subject, htmlContent, sender, EmailType.PROMO);
+        sendEmail(to, "First Million Trade - " + campaign,
+                buildPromoTemplate(firstName, campaign), sender, EmailType.PROMO);
     }
 
     @Async
     public void sendSupportEmail(String to, String subject, String message) {
         SenderInfo sender = senderMap.get(EmailType.SUPPORT);
-        String htmlContent = buildSupportTemplate(message);
-
-        sendEmail(to, subject, htmlContent, sender, EmailType.SUPPORT);
+        sendEmail(to, subject, buildSupportTemplate(message), sender, EmailType.SUPPORT);
     }
 
     @Async
     public void sendAdminEmail(String to, String subject, String message) {
         SenderInfo sender = senderMap.get(EmailType.ADMIN);
-        String htmlContent = buildAdminTemplate(message);
-
-        sendEmail(to, subject, htmlContent, sender, EmailType.ADMIN);
+        sendEmail(to, subject, buildAdminTemplate(message), sender, EmailType.ADMIN);
     }
 
     @Async
@@ -156,7 +130,6 @@ public class SendGridEmailService {
                                             String recordingTitle, String batchName,
                                             String recordingUrl) {
         SenderInfo sender = senderMap.get(EmailType.RECORDING);
-        String subject = "Recording Available — " + recordingTitle;
 
         Context ctx = new Context();
         ctx.setVariable("firstName",      firstName);
@@ -166,16 +139,15 @@ public class SendGridEmailService {
         ctx.setVariable("year",           LocalDateTime.now().getYear());
         String htmlContent = templateEngine.process("email/recording-available-email", ctx);
 
-        sendEmail(to, subject, htmlContent, sender, EmailType.RECORDING);
+        sendEmail(to, "Recording Available — " + recordingTitle,
+                htmlContent, sender, EmailType.RECORDING);
     }
 
     @Async
     public void sendEnquiryNotification(Enquiry enquiry) {
         SenderInfo sender = senderMap.get(EmailType.ENQUIRY);
-        String subject = "New Enquiry Received - First Million Trade";
-        String htmlContent = buildEnquiryTemplate(enquiry);
-
-        sendEmail(properties.getAdminEmail(), subject, htmlContent, sender, EmailType.ENQUIRY);
+        sendEmail(properties.getAdminEmail(), "New Enquiry Received - First Million Trade",
+                buildEnquiryTemplate(enquiry), sender, EmailType.ENQUIRY);
     }
 
     private void sendEmail(String to, String subject, String htmlContent,
@@ -186,36 +158,24 @@ public class SendGridEmailService {
         }
 
         try {
-            Email from = new Email(sender.getEmail(), sender.getName());
-            Email toEmail = new Email(to);
-            Content content = new Content("text/html", htmlContent);
+            String from = sender.getName() + " <" + sender.getEmail() + ">";
 
-            Mail mail = new Mail(from, subject, toEmail, content);
+            CreateEmailOptions.Builder builder = CreateEmailOptions.builder()
+                    .from(from)
+                    .to(List.of(to))
+                    .subject(subject)
+                    .html(htmlContent);
 
-            // Add BCC to archive if enabled
             if (sender.isBccArchive() && archiveEmail != null) {
-                mail.personalization.get(0).addBcc(archiveEmail);
+                builder.bcc(List.of(archiveEmail));
                 log.debug("📋 BCC added to archive for {} email", type);
             }
 
-            Request request = new Request();
-            request.setMethod(Method.POST);
-            request.setEndpoint("mail/send");
-            request.setBody(mail.build());
+            CreateEmailResponse response = resend.emails().send(builder.build());
+            log.info("✅ [{}] Email sent to {} (ID: {})", type, maskEmail(to), response.getId());
 
-            Response response = sendGrid.api(request);
-
-            if (response.getStatusCode() >= 200 && response.getStatusCode() < 300) {
-                log.info("✅ [{}] Email sent to {} (Status: {})",
-                        type, maskEmail(to), response.getStatusCode());
-            } else {
-                log.error("❌ [{}] Failed to send to {}: Status {}, Body {}",
-                        type, maskEmail(to), response.getStatusCode(), response.getBody());
-            }
-
-        } catch (IOException e) {
-            log.error("❌ [{}] Exception sending to {}: {}",
-                    type, maskEmail(to), e.getMessage());
+        } catch (ResendException e) {
+            log.error("❌ [{}] Failed to send to {}: {}", type, maskEmail(to), e.getMessage());
         }
     }
 
@@ -288,7 +248,7 @@ public class SendGridEmailService {
                     <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
                     <p style="font-size: 12px; color: #999;">
                         First Million Trade Support &mdash; We're here to help.<br>
-                        <a href="mailto:help@firstmilliontrade.com" style="color: #999;">help@firstmilliontrade.com</a>
+                        <a href="mailto:help@mail.firstmilliontrade.com" style="color: #999;">help@mail.firstmilliontrade.com</a>
                     </p>
                 </div>
             </body>

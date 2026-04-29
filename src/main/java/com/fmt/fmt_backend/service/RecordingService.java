@@ -53,7 +53,7 @@ public class RecordingService {
     private final BatchEnrollmentRepository batchEnrollmentRepository;
     private final RestTemplate restTemplate = new RestTemplate();
     private final ZoomService zoomService;
-    private final SendGridEmailService emailService;
+    private final ResendEmailService emailService;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
@@ -947,7 +947,7 @@ public class RecordingService {
      * Sends "recording is ready" emails to all enrolled students and the mentor.
      *
      * Called after Bunny marks the recording AVAILABLE.
-     * Each email is fired with @Async in SendGridEmailService — non-blocking.
+     * Each email is fired with @Async in ResendEmailService — non-blocking.
      *
      * The recording URL points to the app's batch recordings page, which requires
      * login. Sharing the link with non-members gives them a login wall — safe.

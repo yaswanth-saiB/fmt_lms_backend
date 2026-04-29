@@ -64,8 +64,8 @@ sms:
   enable-unicode: false
   country-code: IN
 
-sendgrid:
-  api-key: SG.test_key
+resend:
+  api-key: re_test_key
   enabled: false
   admin-email: admin@test.com
   archive:
