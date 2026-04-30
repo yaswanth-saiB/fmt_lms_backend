@@ -21,7 +21,7 @@ public class ResendProperties {
     @Data
     public static class ArchiveConfig {
         private boolean enabled = true;
-        private String email = "archive@mail.firstmilliontrade.com";
+        private String email = "archive@firstmilliontrade.com";
         private String name = "FMT Archive";
     }
 

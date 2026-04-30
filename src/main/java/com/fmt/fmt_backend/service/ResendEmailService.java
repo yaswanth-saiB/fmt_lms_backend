@@ -150,6 +150,50 @@ public class ResendEmailService {
                 buildEnquiryTemplate(enquiry), sender, EmailType.ENQUIRY);
     }
 
+    @Async
+    public void sendEnquiryFailureAlert(com.fmt.fmt_backend.dto.EnquiryRequest request, String ipAddress, String error) {
+        SenderInfo sender = senderMap.get(EmailType.ADMIN);
+        String html = String.format("""
+            <!DOCTYPE html>
+            <html>
+            <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0;">
+                <div style="max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 8px; padding: 40px; border-left: 4px solid #e53e3e;">
+                    <h2 style="color: #e53e3e;">⚠️ Enquiry Save Failed — Manual Action Required</h2>
+                    <p style="color: #555;">An enquiry was submitted but <strong>could not be saved to the database</strong>. Please add it manually.</p>
+                    <table style="width: 100%%; border-collapse: collapse; margin: 24px 0;">
+                        <tr><td style="padding: 8px; color: #888; width: 140px;">Name</td><td style="padding: 8px; font-weight: bold;">%s</td></tr>
+                        <tr style="background:#f9f9f9"><td style="padding: 8px; color: #888;">Mobile</td><td style="padding: 8px; font-weight: bold;">%s</td></tr>
+                        <tr><td style="padding: 8px; color: #888;">City</td><td style="padding: 8px;">%s</td></tr>
+                        <tr style="background:#f9f9f9"><td style="padding: 8px; color: #888;">Experience</td><td style="padding: 8px;">%s</td></tr>
+                        <tr><td style="padding: 8px; color: #888;">Interest</td><td style="padding: 8px;">%s</td></tr>
+                        <tr style="background:#f9f9f9"><td style="padding: 8px; color: #888;">Message</td><td style="padding: 8px;">%s</td></tr>
+                        <tr><td style="padding: 8px; color: #888;">IP Address</td><td style="padding: 8px;">%s</td></tr>
+                    </table>
+                    <div style="background: #fff5f5; border: 1px solid #fed7d7; border-radius: 4px; padding: 16px; margin-top: 16px;">
+                        <p style="margin: 0; color: #c53030; font-size: 13px;"><strong>Error:</strong> %s</p>
+                    </div>
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
+                    <p style="font-size: 12px; color: #999;">Automated alert — First Million Trade</p>
+                </div>
+            </body>
+            </html>
+            """,
+            request.getName(),
+            request.getMobile(),
+            nvl(request.getCity()),
+            request.getExperienceLevel() != null ? request.getExperienceLevel().name() : "—",
+            nvl(request.getAreaOfInterest()),
+            nvl(request.getMessage()),
+            nvl(ipAddress),
+            error
+        );
+        sendEmail(properties.getAdminEmail(), "⚠️ Enquiry Save Failed — Manual Action Required", html, sender, EmailType.ADMIN);
+    }
+
+    private String nvl(String value) {
+        return value != null ? value : "—";
+    }
+
     private void sendEmail(String to, String subject, String htmlContent,
                            SenderInfo sender, EmailType type) {
         if (!emailEnabled) {

@@ -43,6 +43,7 @@ public class Enquiry {
 
     private String ipAddress;
 
+    @Column(columnDefinition = "TEXT")
     private String userAgent;
 
     @CreationTimestamp

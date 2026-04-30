@@ -23,9 +23,13 @@ public class EnquiryService {
     private final ResendEmailService emailService;
     private final HttpServletRequest request;
 
-    @Transactional
     public EnquiryResponse submitEnquiry(EnquiryRequest enquiryRequest) {
         log.info("📋 New enquiry from: {} - {}", enquiryRequest.getName(), enquiryRequest.getMobile());
+
+        String rawUserAgent = request.getHeader("User-Agent");
+        String userAgent = rawUserAgent != null && rawUserAgent.length() > 500
+                ? rawUserAgent.substring(0, 500)
+                : rawUserAgent;
 
         Enquiry enquiry = Enquiry.builder()
                 .name(enquiryRequest.getName())
@@ -36,20 +40,28 @@ public class EnquiryService {
                 .message(enquiryRequest.getMessage())
                 .status(Enquiry.EnquiryStatus.NEW)
                 .ipAddress(getClientIp())
-                .userAgent(request.getHeader("User-Agent"))
+                .userAgent(userAgent)
                 .build();
 
-        Enquiry savedEnquiry = enquiryRepository.save(enquiry);
-        log.info("✅ Enquiry saved with ID: {}", savedEnquiry.getId());
-
         try {
+            Enquiry savedEnquiry = enquiryRepository.save(enquiry);
+            log.info("✅ Enquiry saved with ID: {}", savedEnquiry.getId());
             emailService.sendEnquiryNotification(savedEnquiry);
-            log.info("📧 Enquiry notification email sent");
+            return mapToResponse(savedEnquiry);
         } catch (Exception e) {
-            log.error("❌ Failed to send enquiry email: {}", e.getMessage());
+            log.error("❌ Enquiry save failed for {} ({}): {}", enquiryRequest.getName(), enquiryRequest.getMobile(), e.getMessage());
+            emailService.sendEnquiryFailureAlert(enquiryRequest, getClientIp(), e.getMessage());
+            // Return gracefully so the user doesn't see an error and retry-spam
+            return EnquiryResponse.builder()
+                    .name(enquiryRequest.getName())
+                    .mobile(enquiryRequest.getMobile())
+                    .city(enquiryRequest.getCity())
+                    .experienceLevel(enquiryRequest.getExperienceLevel() != null ? enquiryRequest.getExperienceLevel().name() : null)
+                    .areaOfInterest(enquiryRequest.getAreaOfInterest())
+                    .message(enquiryRequest.getMessage())
+                    .status(Enquiry.EnquiryStatus.NEW.name())
+                    .build();
         }
-
-        return mapToResponse(savedEnquiry);
     }
 
     public List<EnquiryResponse> getAll(Enquiry.EnquiryStatus status) {

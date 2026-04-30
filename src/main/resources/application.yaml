@@ -115,7 +115,7 @@ resend:
   # Archive/BCC settings
   archive:
     enabled: ${RESEND_ARCHIVE_ENABLED:true}
-    email: ${ARCHIVE_EMAIL:archive@mail.firstmilliontrade.com}
+    email: ${ARCHIVE_EMAIL:archive@firstmilliontrade.com}
     name: ${ARCHIVE_NAME:First Million Trade Archive}
 
   # Email senders configuration

@@ -100,6 +100,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/recordings/**").hasRole("STUDENT")
                         .requestMatchers("/api/user/**").authenticated()
                         .requestMatchers("/api/devices/**").authenticated()
+                        // Lead Management CRM — ADMIN or SALES
+                        // assign endpoint is ADMIN-only, enforced inside LeadService
+                        .requestMatchers("/api/sales/**").hasAnyRole("ADMIN", "SALES")
 
                         .anyRequest().authenticated()
                 )
