@@ -2,11 +2,14 @@ package com.fmt.fmt_backend.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fmt.fmt_backend.entity.Lead;
+import com.fmt.fmt_backend.enums.DemoType;
 import com.fmt.fmt_backend.enums.LeadSource;
 import com.fmt.fmt_backend.enums.LeadStatus;
+import com.fmt.fmt_backend.enums.PreferredTiming;
 import lombok.Builder;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -20,8 +23,8 @@ public class LeadSummaryResponse {
     private UUID id;
     private String name;
     private String phone;
+    private String alternatePhone;
     private String email;
-    private String courseInterest;
     private LeadSource source;
     private LeadStatus status;
     private Integer dnpCount;
@@ -33,6 +36,13 @@ public class LeadSummaryResponse {
     private String assignedToName;
     private String currentLevel;
     private String preferredLearningMode;
+    private PreferredTiming preferredTimings;
+    private LocalDateTime sheetCreatedAt;
+    private Integer leadAgeDays;
+    private DemoType demoType;
+    private LocalDateTime demoScheduledAt;
+    private String demoMentorName;
+    private BigDecimal courseFee;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -42,18 +52,26 @@ public class LeadSummaryResponse {
             assignedToName = lead.getAssignedTo().getFirstName() + " " + lead.getAssignedTo().getLastName();
         }
 
+        String demoMentorName = null;
+        if (lead.getDemoMentor() != null) {
+            demoMentorName = lead.getDemoMentor().getFirstName() + " " + lead.getDemoMentor().getLastName();
+        }
+
         Integer daysSinceLastCall = null;
         if (lead.getLastCallAt() != null) {
             daysSinceLastCall = (int) ChronoUnit.DAYS.between(
                     lead.getLastCallAt().toLocalDate(), LocalDate.now());
         }
 
+        LocalDateTime ref = lead.getSheetCreatedAt() != null ? lead.getSheetCreatedAt() : lead.getCreatedAt();
+        int leadAgeDays = ref != null ? (int) ChronoUnit.DAYS.between(ref.toLocalDate(), LocalDate.now()) : 0;
+
         return LeadSummaryResponse.builder()
                 .id(lead.getId())
                 .name(lead.getName())
                 .phone(lead.getPhone())
+                .alternatePhone(lead.getAlternatePhone())
                 .email(lead.getEmail())
-                .courseInterest(lead.getCourseInterest())
                 .source(lead.getSource())
                 .status(lead.getStatus())
                 .dnpCount(lead.getDnpCount())
@@ -65,6 +83,13 @@ public class LeadSummaryResponse {
                 .assignedToName(assignedToName)
                 .currentLevel(lead.getCurrentLevel())
                 .preferredLearningMode(lead.getPreferredLearningMode())
+                .preferredTimings(lead.getPreferredTimings())
+                .sheetCreatedAt(lead.getSheetCreatedAt())
+                .leadAgeDays(leadAgeDays)
+                .demoType(lead.getDemoType())
+                .demoScheduledAt(lead.getDemoScheduledAt())
+                .demoMentorName(demoMentorName)
+                .courseFee(lead.getCourseFee())
                 .createdAt(lead.getCreatedAt())
                 .updatedAt(lead.getUpdatedAt())
                 .build();

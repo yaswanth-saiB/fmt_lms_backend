@@ -3,6 +3,9 @@ package com.fmt.fmt_backend.controller;
 import com.fmt.fmt_backend.dto.*;
 import com.fmt.fmt_backend.entity.Enquiry;
 import com.fmt.fmt_backend.entity.User;
+import com.fmt.fmt_backend.enums.UserRole;
+import com.fmt.fmt_backend.repository.UserRepository;
+import com.fmt.fmt_backend.service.AdminService;
 import com.fmt.fmt_backend.service.AuthService;
 import com.fmt.fmt_backend.service.EnquiryService;
 import com.fmt.fmt_backend.service.LeadService;
@@ -31,6 +34,8 @@ public class LeadController {
     private final LeadService leadService;
     private final EnquiryService enquiryService;
     private final AuthService authService;
+    private final AdminService adminService;
+    private final UserRepository userRepository;
 
     // ─────────────────────────────────────────────
     // Import from Excel
@@ -77,15 +82,16 @@ public class LeadController {
     // ─────────────────────────────────────────────
 
     @GetMapping("/leads")
-    @Operation(summary = "List all leads with optional filters and pagination", description = "Role: ADMIN or SALES. Params: status, assignedTo (UUID), search, page, size")
+    @Operation(summary = "List all leads with optional filters and pagination", description = "Role: ADMIN or SALES. Params: status, stage (ACTIVE|INACTIVE), assignedTo (UUID), search, page, size")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getLeads(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String stage,
             @RequestParam(required = false) UUID assignedTo,
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        ApiResponse<Map<String, Object>> response = leadService.getLeads(status, assignedTo, search, page, size);
+        ApiResponse<Map<String, Object>> response = leadService.getLeads(status, stage, assignedTo, search, page, size);
         return ResponseEntity.ok(response);
     }
 
@@ -170,6 +176,26 @@ public class LeadController {
     }
 
     // ─────────────────────────────────────────────
+    // Google Sheets Sync
+    // ─────────────────────────────────────────────
+
+    @PostMapping("/leads/sync-sheets")
+    @Operation(summary = "Manually trigger Google Sheets sync", description = "Role: ADMIN or SALES. Pulls latest rows from FMT Ad Leads sheet and imports new leads.")
+    public ResponseEntity<ApiResponse<LeadImportResponse>> syncFromSheets() {
+        User user = requireCurrentUser();
+        log.info("📊 Manual sheet sync triggered by: {}", user.getEmail());
+        ApiResponse<LeadImportResponse> response = leadService.syncFromSheets(user);
+        return ResponseEntity.status(response.isSuccess() ? 200 : 400).body(response);
+    }
+
+    @GetMapping("/leads/sync-logs")
+    @Operation(summary = "Get last 20 Google Sheets sync logs", description = "Role: ADMIN or SALES")
+    public ResponseEntity<ApiResponse<List<SheetSyncLogResponse>>> getSyncLogs() {
+        ApiResponse<List<SheetSyncLogResponse>> response = leadService.getSyncLogs();
+        return ResponseEntity.ok(response);
+    }
+
+    // ─────────────────────────────────────────────
     // Enquiries (ADMIN + SALES — same data as /api/admin/enquiries)
     // ─────────────────────────────────────────────
 
@@ -205,6 +231,82 @@ public class LeadController {
         } catch (RuntimeException e) {
             return ResponseEntity.status(404).body(ApiResponse.error(e.getMessage()));
         }
+    }
+
+    // ─────────────────────────────────────────────
+    // WhatsApp campaign step
+    // ─────────────────────────────────────────────
+
+    @PostMapping("/leads/{id}/whatsapp-step")
+    @Operation(summary = "Log a WhatsApp campaign sequence step", description = "Role: ADMIN or SALES. Body: { step: 1, message: '...' }")
+    public ResponseEntity<ApiResponse<LeadResponse>> logWhatsappStep(
+            @PathVariable UUID id,
+            @RequestBody Map<String, Object> body) {
+
+        User user = requireCurrentUser();
+        int step = body.containsKey("step") ? Integer.parseInt(body.get("step").toString()) : 1;
+        String message = body.containsKey("message") ? body.get("message").toString() : null;
+        ApiResponse<LeadResponse> response = leadService.logWhatsappStep(id, step, message, user);
+        return ResponseEntity.status(response.isSuccess() ? 200 : 400).body(response);
+    }
+
+    // ─────────────────────────────────────────────
+    // Payment management
+    // ─────────────────────────────────────────────
+
+    @PostMapping("/leads/{id}/payments")
+    @Operation(summary = "Record a payment for a lead", description = "Role: ADMIN or SALES")
+    public ResponseEntity<ApiResponse<LeadPaymentResponse>> addPayment(
+            @PathVariable UUID id,
+            @Valid @RequestBody LeadPaymentRequest request) {
+
+        User user = requireCurrentUser();
+        ApiResponse<LeadPaymentResponse> response = leadService.addPayment(id, request, user);
+        return ResponseEntity.status(response.isSuccess() ? 201 : 400).body(response);
+    }
+
+    @GetMapping("/leads/{id}/payments")
+    @Operation(summary = "Get all payments for a lead with balance summary", description = "Role: ADMIN or SALES")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getPayments(@PathVariable UUID id) {
+        ApiResponse<Map<String, Object>> response = leadService.getPayments(id);
+        return ResponseEntity.status(response.isSuccess() ? 200 : 404).body(response);
+    }
+
+    @PutMapping("/leads/{id}/payments/{paymentId}/mark-paid")
+    @Operation(summary = "Mark a pending payment as paid", description = "Role: ADMIN or SALES")
+    public ResponseEntity<ApiResponse<LeadPaymentResponse>> markPaymentPaid(
+            @PathVariable UUID id,
+            @PathVariable UUID paymentId) {
+
+        User user = requireCurrentUser();
+        ApiResponse<LeadPaymentResponse> response = leadService.markPaymentPaid(id, paymentId, user);
+        return ResponseEntity.status(response.isSuccess() ? 200 : 400).body(response);
+    }
+
+    // ─────────────────────────────────────────────
+    // Per-rep stats
+    // ─────────────────────────────────────────────
+
+    @GetMapping("/stats/reps")
+    @Operation(summary = "Per-sales-rep performance breakdown", description = "Role: ADMIN or SALES")
+    public ResponseEntity<ApiResponse<List<SalesRepStatsResponse>>> getRepStats() {
+        ApiResponse<List<SalesRepStatsResponse>> response = leadService.getRepStats();
+        return ResponseEntity.ok(response);
+    }
+
+    // ─────────────────────────────────────────────
+    // Mentor list (for demo booking dropdown)
+    // ─────────────────────────────────────────────
+
+    @GetMapping("/mentors")
+    @Operation(summary = "List all active mentors (for demo booking dropdown)", description = "Role: ADMIN or SALES")
+    public ResponseEntity<ApiResponse<List<UserResponse>>> getMentors() {
+        List<UserResponse> mentors = userRepository.findAllByUserRoleOrderByCreatedAtDesc(UserRole.MENTOR)
+                .stream()
+                .filter(u -> Boolean.TRUE.equals(u.getIsActive()))
+                .map(adminService::toUserResponse)
+                .toList();
+        return ResponseEntity.ok(ApiResponse.success("Mentors retrieved", mentors));
     }
 
     // ─────────────────────────────────────────────

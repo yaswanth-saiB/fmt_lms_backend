@@ -22,4 +22,16 @@ public interface LeadActivityRepository extends JpaRepository<LeadActivity, UUID
             @Param("activityType") ActivityType activityType,
             @Param("prefix") String prefix,
             @Param("start") LocalDateTime start);
+
+    // Per-rep: demos or other status changes done by a specific user
+    @Query("SELECT COUNT(la) FROM LeadActivity la " +
+           "WHERE la.createdBy.id = :userId " +
+           "AND la.activityType = :activityType " +
+           "AND la.description LIKE :prefix " +
+           "AND la.createdAt >= :start")
+    long countStatusChangeByUserAfter(
+            @Param("userId") UUID userId,
+            @Param("activityType") ActivityType activityType,
+            @Param("prefix") String prefix,
+            @Param("start") LocalDateTime start);
 }

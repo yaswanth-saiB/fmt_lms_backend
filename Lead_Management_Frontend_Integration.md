@@ -1,39 +1,38 @@
 # Lead Management CRM — Frontend Integration Guide
 
-> **Roles that can access this module:** `ADMIN` and `SALES`
-> **Mentors** do NOT have access to any `/api/sales/**` endpoint.
-> All endpoints require a valid `access_token` cookie (sent automatically by the browser).
+> **Version:** v3 (Payment tracking, Webinars, WhatsApp sequences, Per-rep stats)
+> **Roles with access:** `ADMIN` and `SALES` (unless noted otherwise)
+> All endpoints require a valid `access_token` cookie (sent automatically by the browser), **except** public webinar endpoints.
 
 ---
 
 ## Table of Contents
+
 1. [Roles & Access](#roles--access)
 2. [Lead Object Reference](#lead-object-reference)
 3. [Status Flow](#status-flow)
-4. [Endpoints](#endpoints)
-   - [Import from Excel](#1-import-leads-from-excel)
-   - [Add Single Lead](#2-add-single-lead)
-   - [List Leads (Paginated)](#3-list-leads-paginated)
-   - [Get Lead Detail](#4-get-lead-detail-with-activity-history)
-   - [Log Failed Call (DNP)](#5-log-failed-call-attempt-dnp)
-   - [Mark WhatsApp Sent](#6-mark-whatsapp-sent)
-   - [Update Status](#7-update-lead-status)
-   - [Add Note](#8-add-note)
-   - [Dashboard Stats](#9-dashboard-stats)
-   - [Assign Lead](#10-assign-lead--admin-only)
-   - [Enquiries](#11-enquiries)
-5. [Excel Import Column Guide](#excel-import-column-guide)
-6. [Enum Reference](#enum-reference)
-7. [Error Handling](#error-handling)
+4. [Lead Endpoints](#lead-endpoints)
+5. [Payment Endpoints](#payment-endpoints)
+6. [Stats & Rep Performance](#stats--rep-performance)
+7. [Webinar Endpoints](#webinar-endpoints)
+8. [Enquiry Endpoints](#enquiry-endpoints)
+9. [Google Sheet Sync](#google-sheet-sync)
+10. [Enum Reference](#enum-reference)
+11. [Error Handling](#error-handling)
 
 ---
 
 ## Roles & Access
 
-| Endpoint | ADMIN | SALES | MENTOR |
-|----------|-------|-------|--------|
-| All `/api/sales/**` | ✅ | ✅ | ❌ |
-| `PUT /api/sales/leads/{id}/assign` | ✅ | ❌ | ❌ |
+| Endpoint | ADMIN | SALES | MENTOR | Public |
+|----------|-------|-------|--------|--------|
+| All `/api/sales/**` | ✅ | ✅ | ❌ | ❌ |
+| `PUT /api/sales/leads/{id}/assign` | ✅ | ❌ | ❌ | ❌ |
+| `GET /api/sales/stats/reps` | ✅ | ✅ | ❌ | ❌ |
+| All `/api/admin/webinars/**` | ✅ | ❌ | ❌ | ❌ |
+| `GET /api/sales/webinars/**` | ✅ | ✅ | ❌ | ❌ |
+| `GET /api/public/webinars/**` | ✅ | ✅ | ✅ | ✅ |
+| `POST /api/public/webinars/{id}/register` | ✅ | ✅ | ✅ | ✅ |
 
 > **Creating a SALES user:** Only ADMIN can create a user with `role: SALES` via `POST /api/admin/users`.
 
@@ -41,15 +40,15 @@
 
 ## Lead Object Reference
 
-### LeadSummaryResponse (used in paginated list)
+### LeadSummaryResponse (paginated list)
 
 ```json
 {
   "id": "uuid",
   "name": "Rahul Sharma",
   "phone": "9876543210",
+  "alternatePhone": "9123456789",
   "email": "rahul@gmail.com",
-  "courseInterest": "F&O Trading",
   "source": "META_ADS",
   "status": "DNP_2",
   "dnpCount": 2,
@@ -61,24 +60,67 @@
   "assignedToName": "Sales Person Name",
   "currentLevel": "Beginner",
   "preferredLearningMode": "Online",
+  "preferredTimings": "EVENING",
+  "sheetCreatedAt": "2026-04-20T09:00:00",
+  "leadAgeDays": 10,
+  "demoType": null,
+  "demoScheduledAt": null,
+  "demoMentorName": null,
+  "courseFee": null,
   "createdAt": "2026-04-27T09:00:00",
   "updatedAt": "2026-04-28T14:15:00"
 }
 ```
 
-### LeadResponse (used in single lead detail)
+- `preferredTimings` — `MORNING | AFTERNOON | EVENING | NIGHT | null`
+- `alternatePhone` — set when lead responds on WhatsApp with a different number
+- `leadAgeDays` — days since `sheetCreatedAt` (or `createdAt`). Badge ≥ 4 = aging, ≥ 8 = stale.
+- `null` fields are omitted from the JSON response (`@JsonInclude(NON_NULL)`)
 
-Same as `LeadSummaryResponse` plus:
+### LeadResponse (full lead detail)
+
+Same as summary, plus:
+
 ```json
 {
+  "courseInterest": "F&O Trading",
   "notes": "Interested, needs EMI option",
+
+  "demoMentorName": "Mentor Full Name",
+  "demoScheduledAt": "2026-05-03T11:00:00",
+  "demoConductedAt": "2026-05-03T11:45:00",
+  "demoType": "ONLINE",
+
+  "closingBlocker": "NEEDS_EMI",
+  "closingComment": "Needs 3-month EMI plan",
+
+  "courseFee": 15000.00,
+  "totalPaid": 5000.00,
+  "balance": 10000.00,
+  "closedByName": "Sales Person Name",
+
   "activities": [
     {
       "id": "uuid",
       "activityType": "LEAD_IMPORTED",
-      "description": "Lead imported from Excel",
-      "createdByName": "Admin FMT",
+      "description": "Lead synced from Google Sheet (FMT Ad Leads)",
+      "createdByName": null,
       "createdAt": "2026-04-27T09:00:00"
+    }
+  ],
+
+  "payments": [
+    {
+      "id": "uuid",
+      "leadId": "uuid",
+      "amount": 5000.00,
+      "paymentType": "ADVANCE",
+      "dueDate": null,
+      "paidAt": "2026-05-01T10:00:00",
+      "status": "PAID",
+      "notes": "Paid via UPI",
+      "recordedByName": "Sales Person Name",
+      "createdAt": "2026-05-01T10:00:00"
     }
   ]
 }
@@ -90,65 +132,62 @@ Same as `LeadSummaryResponse` plus:
 
 ```
 NEW
- └─► DNP_1 → DNP_2 → DNP_3 → DNP_4 → DNP_5  (via call-attempted)
-                                         └─► WHATSAPP_SENT  (via whatsapp-sent)
-                                               └─► CONTACTED
-                                                     ├─► FOLLOWUP_SCHEDULED
-                                                     ├─► DEMO_BOOKED
-                                                     │      └─► DEMO_DONE
-                                                     │             └─► CLOSING
-                                                     │                   └─► PAYMENT_DONE
-                                                     └─► NOT_INTERESTED
- └─► SWITCH_OFF  (at any point — number unreachable)
+ └─► DNP_1 → DNP_2 → DNP_3 → DNP_4 → DNP_5  (call-attempted endpoint)
+                                       └─► WHATSAPP_SENT  (whatsapp-sent endpoint)
+                                             └─► WHATSAPP_RESPONDED  (update-status)
+                                                   └─► CONTACTED
+                                                         ├─► FOLLOWUP_SCHEDULED
+                                                         ├─► DEMO_BOOKED
+                                                         │     ├─► DEMO_DONE → CLOSING → PAYMENT_DONE ✅
+                                                         │     └─► DEMO_NO_SHOW
+                                                         └─► NOT_INTERESTED ❌
+ └─► SWITCH_OFF ❌  (unreachable at any point)
 ```
 
-**UI suggestion:**
-- Show a **"Call" button** that triggers `call-attempted` — disable it when `dnpCount >= 5`
-- Show a **"Send WhatsApp" button** only when `whatsappEligible = true` and `whatsappSent = false`
-- After 5 DNPs, the status automatically becomes `DNP_5` and `whatsappEligible` flips to `true`
+**Stage filter (for `GET /api/sales/leads?stage=ACTIVE|INACTIVE`):**
+- `ACTIVE` = NEW, DNP_1–5, WHATSAPP_SENT, WHATSAPP_RESPONDED, CONTACTED, FOLLOWUP_SCHEDULED, DEMO_BOOKED, DEMO_DONE, DEMO_NO_SHOW, CLOSING
+- `INACTIVE` = PAYMENT_DONE, NOT_INTERESTED, SWITCH_OFF
+
+**UI tips:**
+- Disable **Call** button when `dnpCount >= 5`
+- Show **Send WhatsApp** only when `whatsappEligible = true && whatsappSent = false`
+- When status → `DEMO_BOOKED`: show mentor picker, datetime picker, demo type (ONLINE/OFFLINE)
+- When status → `DEMO_DONE`: show conducted-at datetime
+- When status → `CLOSING`: show closing blocker dropdown + course fee field
+- When status → `PAYMENT_DONE`: show course fee field — `closedBy` auto-set to current user
+- When status → `WHATSAPP_RESPONDED`: show alternate phone field
 
 ---
 
-## Endpoints
+## Lead Endpoints
 
-### 1. Import Leads from Excel
+### Import Leads from Excel
 
 ```
 POST /api/sales/leads/import
 Content-Type: multipart/form-data
 ```
 
-**Request:** Form field `file` = `.xlsx` file
+**Request:** form field `file` = `.xlsx` file
 
-**Response:**
+**Response (200):**
 ```json
 {
   "success": true,
   "message": "Import complete",
-  "data": {
-    "imported": 47,
-    "skipped": 3,
-    "errors": ["Row 5: invalid data"]
-  }
+  "data": { "imported": 47, "skipped": 3, "errors": ["Row 5: invalid data"] }
 }
 ```
 
-**Notes:**
-- Duplicate phone numbers are silently skipped (counted in `skipped`)
-- Rows with empty phone are skipped
-- Errors list contains row-specific messages for truly invalid data
-- All imported leads get status `NEW` and create a `LEAD_IMPORTED` activity
-
 ---
 
-### 2. Add Single Lead
+### Add Single Lead
 
 ```
 POST /api/sales/leads
 Content-Type: application/json
 ```
 
-**Request body:**
 ```json
 {
   "name": "Rahul Sharma",
@@ -159,36 +198,26 @@ Content-Type: application/json
 }
 ```
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `name` | ✅ | Full name |
-| `phone` | ✅ | Mobile number (must be unique) |
-| `email` | ❌ | Email address |
-| `courseInterest` | ❌ | e.g. "F&O Trading", "Options" |
-| `notes` | ❌ | Any initial notes |
-
 **Response (201):** Full `LeadResponse`
-
-**Error (400):**
-```json
-{ "success": false, "message": "A lead with this phone number already exists" }
-```
 
 ---
 
-### 3. List Leads (Paginated)
+### List Leads (Paginated)
 
 ```
-GET /api/sales/leads?status=DNP_1&assignedTo=uuid&search=rahul&page=0&size=20
+GET /api/sales/leads?status=DEMO_BOOKED&stage=ACTIVE&assignedTo=uuid&search=rahul&page=0&size=20
 ```
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `status` | String (optional) | Filter by LeadStatus enum value |
-| `assignedTo` | UUID (optional) | Filter by assigned sales person |
-| `search` | String (optional) | Search in name and phone |
-| `page` | int (default: 0) | Page number |
-| `size` | int (default: 20) | Page size |
+| `status` | string | Filter by exact `LeadStatus` enum value |
+| `stage` | string | `ACTIVE` or `INACTIVE` — broad bucket filter |
+| `assignedTo` | UUID | Filter by assigned sales rep |
+| `search` | string | Searches name + phone (case-insensitive) |
+| `page` | int | 0-based page number (default: 0) |
+| `size` | int | Page size (default: 20) |
+
+> `status` takes priority over `stage` when both are provided.
 
 **Response (200):**
 ```json
@@ -205,112 +234,195 @@ GET /api/sales/leads?status=DNP_1&assignedTo=uuid&search=rahul&page=0&size=20
 
 ---
 
-### 4. Get Lead Detail with Activity History
+### Get Lead Detail
 
 ```
 GET /api/sales/leads/{id}
 ```
 
-**Response (200):** Full `LeadResponse` with `activities` array
-
-**Response (404):**
-```json
-{ "success": false, "message": "Lead not found" }
-```
+**Response (200):** Full `LeadResponse` with `activities` + `payments` arrays.
 
 ---
 
-### 5. Log Failed Call Attempt (DNP)
+### Log Failed Call Attempt (DNP)
 
 ```
 PUT /api/sales/leads/{id}/call-attempted
 ```
 
-No request body needed.
-
-**Logic:**
-- Increments `dnpCount` by 1
-- Sets status to `DNP_{count}` (e.g. `DNP_3`)
-- Sets `lastCallAt` to now
-- When `dnpCount` reaches 5: sets `whatsappEligible = true`
-
-**Response (200):** Updated `LeadResponse`
-
-**Error (400) — already at 5 DNPs:**
-```json
-{ "success": false, "message": "Maximum call attempts reached. Send WhatsApp." }
-```
+No request body. Auto-increments `dnpCount`, updates status to `DNP_1`–`DNP_5`, sets `whatsappEligible = true` after 5 DNPs.
 
 ---
 
-### 6. Mark WhatsApp Sent
+### Mark WhatsApp Sent
 
 ```
 PUT /api/sales/leads/{id}/whatsapp-sent
 ```
 
-No request body needed.
+No body. Only allowed when `whatsappEligible = true`. Sets `whatsappSent = true`, status → `WHATSAPP_SENT`.
 
-**Requires:** `whatsappEligible = true` (i.e. 5 DNPs completed)
+---
 
-**Logic:**
-- Sets `whatsappSent = true`
-- Sets status to `WHATSAPP_SENT`
+### Log WhatsApp Campaign Step
 
-**Response (200):** Updated `LeadResponse`
+```
+POST /api/sales/leads/{id}/whatsapp-step
+```
 
-**Error (400):**
 ```json
-{ "success": false, "message": "Lead is not eligible for WhatsApp yet. Complete 5 call attempts first." }
+{
+  "step": 2,
+  "message": "Sent follow-up video about F&O course"
+}
+```
+
+Logs a `WHATSAPP_SEQUENCE` activity entry. Use this to track which step of your WhatsApp campaign sequence you sent (Day 1 intro, Day 3 social proof, Day 7 offer, etc.).
+
+---
+
+### Update Lead Status
+
+```
+PUT /api/sales/leads/{id}/status
+```
+
+```json
+{
+  "status": "DEMO_BOOKED",
+  "notes": "Confirmed for Saturday 11 AM",
+  "followupDatetime": "2026-05-03T11:00:00",
+
+  "demoMentorId": "uuid-of-mentor",
+  "demoScheduledAt": "2026-05-03T11:00:00",
+  "demoType": "ONLINE",
+
+  "demoConductedAt": "2026-05-03T11:45:00",
+
+  "closingBlocker": "NEEDS_EMI",
+  "closingComment": "Wants 3-month EMI",
+
+  "courseFee": 15000.00,
+
+  "alternatePhone": "9123456789"
+}
+```
+
+**Fields by status:**
+
+| Status | Required extra fields |
+|--------|-----------------------|
+| `DEMO_BOOKED` | `demoMentorId`, `demoScheduledAt`, `demoType` |
+| `DEMO_DONE` | `demoConductedAt` (defaults to now if omitted) |
+| `CLOSING` | `closingBlocker`, `closingComment`, `courseFee` |
+| `PAYMENT_DONE` | `courseFee` (closedBy auto-set to caller) |
+| `WHATSAPP_RESPONDED` | `alternatePhone` |
+| Others | Only `notes`, `followupDatetime` apply |
+
+---
+
+### Add Note
+
+```
+POST /api/sales/leads/{id}/note
+```
+
+```json
+{ "note": "Called back, interested in offline batch" }
 ```
 
 ---
 
-### 7. Update Lead Status
+### Assign Lead (ADMIN only)
 
 ```
-PUT /api/sales/leads/{id}/status
-Content-Type: application/json
+PUT /api/sales/leads/{id}/assign
 ```
 
-**Request body:**
+```json
+{ "assignedTo": "uuid-of-sales-user" }
+```
+
+---
+
+### Get Mentor List (for demo booking dropdown)
+
+```
+GET /api/sales/mentors
+```
+
+Returns active users with role `MENTOR`. Use this to populate the demo mentor dropdown.
+
+---
+
+## Payment Endpoints
+
+### Record a Payment
+
+```
+POST /api/sales/leads/{id}/payments
+```
+
 ```json
 {
-  "status": "CONTACTED",
-  "notes": "Spoke to lead, interested in F&O batch",
-  "followupDatetime": "2026-05-01T15:00:00"
+  "amount": 5000.00,
+  "paymentType": "ADVANCE",
+  "dueDate": null,
+  "notes": "Paid via UPI",
+  "markPaidNow": true
 }
 ```
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `status` | ✅ | Any valid `LeadStatus` value |
-| `notes` | ❌ | Updates the lead's notes field |
-| `followupDatetime` | ❌ | ISO-8601 datetime for follow-up reminder |
+| `amount` | ✅ | Payment amount |
+| `paymentType` | ✅ | `ADVANCE`, `INSTALLMENT`, or `FULL_PAYMENT` |
+| `dueDate` | ❌ | Date the payment is due (`YYYY-MM-DD`) — for pending installments |
+| `notes` | ❌ | Any notes (UPI ref, bank name, etc.) |
+| `markPaidNow` | ❌ | `true` = status PAID + paidAt = now. `false` (default) = PENDING |
 
-**Response (200):** Updated `LeadResponse`
+**Response (201):** `LeadPaymentResponse`
 
 ---
 
-### 8. Add Note
+### Get Payments for a Lead
 
 ```
-POST /api/sales/leads/{id}/note
-Content-Type: application/json
+GET /api/sales/leads/{id}/payments
 ```
 
-**Request body:**
+**Response (200):**
 ```json
-{ "note": "Lead asked about EMI options, follow up next week" }
+{
+  "success": true,
+  "data": {
+    "payments": [ /* LeadPaymentResponse array */ ],
+    "totalPaid": 5000.00,
+    "courseFee": 15000.00,
+    "balance": 10000.00
+  }
+}
 ```
 
-**Response (200):** Updated `LeadResponse`
-
-> **Note:** This replaces the current `notes` field on the lead and also creates a `NOTE_ADDED` activity entry, so the full history is preserved in the activity log.
+- `balance` is `null` when `courseFee` is not set on the lead.
 
 ---
 
-### 9. Dashboard Stats
+### Mark a Payment as Paid
+
+```
+PUT /api/sales/leads/{id}/payments/{paymentId}/mark-paid
+```
+
+No body. Marks a `PENDING` payment as `PAID` and sets `paidAt = now`.
+
+**Response (200):** Updated `LeadPaymentResponse`
+
+---
+
+## Stats & Rep Performance
+
+### Dashboard Stats
 
 ```
 GET /api/sales/leads/stats
@@ -321,80 +433,54 @@ GET /api/sales/leads/stats
 {
   "success": true,
   "data": {
-    "total": 200,
+    "total": 320,
     "newLeads": 45,
-    "dnp": 32,
-    "whatsappSent": 12,
-    "contacted": 56,
-    "followupScheduled": 23,
-    "demoBooked": 15,
-    "demoDone": 10,
-    "closing": 5,
-    "paymentDone": 8,
-    "notInterested": 14,
-    "switchOff": 3,
-    "conversionRate": "4.0%",
+    "dnp": 80,
+    "whatsappSent": 30,
+    "whatsappResponded": 12,
+    "contacted": 55,
+    "followupScheduled": 20,
+    "demoBooked": 18,
+    "demoDone": 14,
+    "demoNoShow": 4,
+    "closing": 8,
+    "paymentDone": 22,
+    "notInterested": 27,
+    "switchOff": 5,
+    "conversionRate": "6.9%",
+
+    "overdueFollowups": 3,
+    "dueSoonFollowups": 2,
+
+    "agingLeads": 15,
+    "staleLeads": 7,
+
     "demosDoneToday": 2,
-    "demosDoneThisWeek": 8,
-    "demosDoneThisMonth": 25,
+    "demosDoneThisWeek": 9,
+    "demosDoneThisMonth": 14,
     "demoBookedToday": 3,
-    "demoBookedThisWeek": 10,
-    "demoBookedThisMonth": 30
+    "demoBookedThisWeek": 11,
+    "demoBookedThisMonth": 18,
+
+    "salesDoneThisWeek": 4,
+    "salesDoneThisMonth": 22
   }
 }
 ```
 
-**Field notes:**
-- `dnp` — sum of all leads in DNP_1 through DNP_5
-- `conversionRate` — `paymentDone / total * 100`, formatted as "X.X%"
-- `demosDoneToday/ThisWeek/ThisMonth` — counts from the activity log timestamp (accurate even if a lead's status was later changed)
-- `demoBookedToday/ThisWeek/ThisMonth` — same, for DEMO_BOOKED transitions
+**UI alerts to show:**
+- `overdueFollowups > 0` → red badge "X follow-ups overdue"
+- `dueSoonFollowups > 0` → orange badge "X follow-ups due in next 2 hrs"
+- `agingLeads > 0` → yellow notice "X leads aging (4–7 days old)"
+- `staleLeads > 0` → red notice "X leads stale (8+ days old)"
 
 ---
 
-### 10. Assign Lead *(ADMIN only)*
+### Per-Rep Stats
 
 ```
-PUT /api/sales/leads/{id}/assign
-Content-Type: application/json
+GET /api/sales/stats/reps
 ```
-
-**Request body:**
-```json
-{ "assignedTo": "uuid-of-sales-user" }
-```
-
-**Response (200):** Updated `LeadResponse`
-
-**Error (400):**
-```json
-{ "success": false, "message": "Can only assign leads to SALES or ADMIN users" }
-```
-
-**Error (400):**
-```json
-{ "success": false, "message": "Assigned user not found" }
-```
-
-> A SALES user calling this endpoint will get **403 Forbidden** — the backend enforces this in SecurityConfig.
-
----
-
----
-
-### 11. Enquiries
-
-> Enquiry data comes from the public contact form on the website. ADMIN and SALES can view and manage them. Mentors no longer have access via the frontend.
-
-#### List Enquiries
-
-```
-GET /api/sales/enquiries?status=NEW
-```
-
-| Param | Values | Default |
-|-------|--------|---------|
-| `status` | `NEW`, `CONTACTED`, `CLOSED` | all |
 
 **Response (200):**
 ```json
@@ -402,142 +488,279 @@ GET /api/sales/enquiries?status=NEW
   "success": true,
   "data": [
     {
-      "id": "uuid",
-      "name": "Arjun Mehta",
-      "mobile": "9876543210",
-      "city": "Hyderabad",
-      "experienceLevel": "BEGINNER",
-      "areaOfInterest": "F&O Trading",
-      "message": "Interested in joining the next batch",
-      "status": "NEW",
-      "createdAt": "2026-04-28T10:30:00"
+      "userId": "uuid",
+      "repName": "Arjun Kumar",
+      "activeLeads": 48,
+      "demosThisWeek": 5,
+      "demosThisMonth": 12,
+      "salesThisWeek": 2,
+      "salesThisMonth": 6,
+      "totalSales": 22
     }
   ]
 }
 ```
 
-#### Get Single Enquiry
+Includes all SALES + ADMIN users. Use this for a leaderboard / team performance table.
+
+---
+
+## Webinar Endpoints
+
+### Public — List Active Webinars
 
 ```
-GET /api/sales/enquiries/{id}
+GET /api/public/webinars
 ```
 
-**Response (200):** Same object as above
+No auth required. Returns webinars with `isActive: true`.
 
-**Response (404):** `{ "success": false, "message": "Enquiry not found" }`
-
-#### Update Enquiry Status
-
-```
-PUT /api/sales/enquiries/{id}/status
-Content-Type: application/json
-```
-
-**Request body:**
+**Response:**
 ```json
-{ "status": "CONTACTED" }
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "title": "Free Trading Masterclass",
+      "description": "Learn F&O basics in 2 hours",
+      "scheduledAt": "2026-05-10T11:00:00",
+      "zoomLink": "https://zoom.us/j/...",
+      "hostMentorName": "Mentor Name",
+      "isActive": true,
+      "maxCapacity": 200,
+      "registrationCount": 87,
+      "createdAt": "2026-05-01T09:00:00"
+    }
+  ]
+}
 ```
 
-Valid values: `NEW` → `CONTACTED` → `CLOSED`
+---
 
-**Response (200):** Updated enquiry object
+### Public — Get Webinar by ID
+
+```
+GET /api/public/webinars/{id}
+```
 
 ---
 
-> **Note for Admin:** Enquiries are also available under `GET /api/admin/enquiries` (existing endpoint — no change).
+### Public — Register for a Webinar
+
+```
+POST /api/public/webinars/{id}/register
+```
+
+```json
+{
+  "name": "Rahul Sharma",
+  "phone": "9876543210",
+  "email": "rahul@gmail.com",
+  "utmSource": "instagram",
+  "utmMedium": "reel",
+  "utmCampaign": "may-masterclass"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | ✅ | Registrant name |
+| `phone` | ✅ | Mobile number |
+| `email` | ❌ | Optional |
+| `utmSource` | ❌ | Traffic source (e.g. `instagram`, `facebook`) |
+| `utmMedium` | ❌ | Medium (e.g. `reel`, `story`, `post`) |
+| `utmCampaign` | ❌ | Campaign name (e.g. `may-masterclass`) |
+
+**Auto-creates a Lead** with `source: WEBINAR` if the phone number is new to the system. If the phone exists, the registration is linked to the existing lead.
+
+**Errors:**
+- `400` — already registered for this webinar
+- `400` — webinar is full (if `maxCapacity` is set)
+- `400` — webinar is inactive (registration closed)
 
 ---
 
-## Excel Import Column Guide
+### Admin — Create Webinar
 
-The import endpoint accepts `.xlsx` files with these column headers (case-insensitive, flexible naming):
+```
+POST /api/admin/webinars
+```
 
-| Our Field | Accepted Column Headers |
-|-----------|------------------------|
-| `name` | `full_name`, `name`, `full name`, `customer name` |
-| `phone` | `phone_number`, `phone`, `mobile`, `contact`, `mobile number` |
-| `email` | `email`, `email address`, `email id` |
-| `source` | `platform`, `source`, `lead source`, `channel` |
-| `currentLevel` | `what_is_your_current_level_in_stock_market?`, `current level`, `level`, `experience` |
-| `preferredLearningMode` | `preferred_learning_mode`, `learning mode`, `mode`, `preferred mode` |
-| `courseInterest` | `course_interest`, `course`, `interest` |
-| `notes` | `comment`, `comments`, `notes`, `remark`, `remarks` |
+```json
+{
+  "title": "Free Trading Masterclass",
+  "description": "...",
+  "scheduledAt": "2026-05-10T11:00:00",
+  "zoomLink": "https://zoom.us/j/...",
+  "hostMentorId": "uuid-of-mentor",
+  "maxCapacity": 200
+}
+```
 
-**Platform → Source mapping:**
+---
 
-| Excel platform value | Stored as |
-|---------------------|-----------|
-| meta / facebook / fb / instagram / ig | `META_ADS` |
-| google | `GOOGLE_ADS` |
-| organic / seo | `ORGANIC` |
-| referral / refer | `REFERRAL` |
-| walk | `WALK_IN` |
-| anything else | `OTHER` |
-| blank | `META_ADS` (default) |
+### Admin — Update Webinar
+
+```
+PUT /api/admin/webinars/{id}
+```
+
+Same body as create.
+
+---
+
+### Admin — Toggle Active/Inactive
+
+```
+PUT /api/admin/webinars/{id}/toggle-active
+```
+
+No body. Toggles `isActive`. Setting to `false` closes registrations.
+
+---
+
+### Admin — List All Webinars
+
+```
+GET /api/admin/webinars
+```
+
+Returns all webinars including inactive ones.
+
+---
+
+### Admin — Get Registrations for a Webinar
+
+```
+GET /api/admin/webinars/{id}/registrations
+```
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "webinarId": "uuid",
+      "webinarTitle": "Free Trading Masterclass",
+      "leadId": "uuid-or-null",
+      "name": "Rahul Sharma",
+      "phone": "9876543210",
+      "email": "rahul@gmail.com",
+      "registeredAt": "2026-05-02T15:30:00",
+      "attended": false,
+      "utmSource": "instagram",
+      "utmMedium": "reel",
+      "utmCampaign": "may-masterclass"
+    }
+  ]
+}
+```
+
+- `leadId` is `null` for registrations where phone already existed and was linked to existing lead — wait, actually `leadId` is always set since auto-create happens or existing lead is linked.
+
+---
+
+### Admin — Mark Attended
+
+```
+PUT /api/admin/webinars/{id}/registrations/{regId}/mark-attended
+```
+
+No body. Sets `attended: true` for the registration.
+
+---
+
+### Sales — View Webinars
+
+```
+GET /api/sales/webinars
+GET /api/sales/webinars/{id}/registrations
+```
+
+Same responses as admin equivalents but accessible to SALES role.
+
+---
+
+## Enquiry Endpoints
+
+```
+GET  /api/sales/enquiries?status=NEW
+GET  /api/sales/enquiries/{id}
+PUT  /api/sales/enquiries/{id}/status
+```
+
+**Status values:** `NEW` → `CONTACTED` → `CLOSED`
+
+---
+
+## Google Sheet Sync
+
+```
+POST /api/sales/leads/sync-sheets     — manual trigger
+GET  /api/sales/leads/sync-logs       — last 20 sync runs
+```
+
+**Columns read from Google Sheet:**
+
+| Column name (case-insensitive) | Mapped to |
+|-------------------------------|-----------|
+| `full_name` / `name` | `name` |
+| `phone_number` / `phone` / `mobile` | `phone` |
+| `email` | `email` |
+| `platform` / `source` / `lead source` | `source` (mapped to LeadSource enum) |
+| `what_is_your_current_level…` / `current level` | `currentLevel` |
+| `preferred_learning_mode` / `learning mode` | `preferredLearningMode` |
+| `preferred_timings` / `preferred timing` / `timing` | `preferredTimings` (MORNING/AFTERNOON/EVENING/NIGHT) |
+| `created_time` / `timestamp` / `date` | `sheetCreatedAt` |
+| `comment` / `comments` | appended to `notes` |
+| All columns named `status` | appended to `notes` as "[Sheet Status: …]" |
+
+Phone numbers are normalised (strips `+91` / `91` prefix, strips non-numeric characters including `p:` format). Duplicate phones are skipped.
 
 ---
 
 ## Enum Reference
 
 ### LeadStatus
-
-| Value | Meaning |
-|-------|---------|
-| `NEW` | Just imported, no contact yet |
-| `DNP_1` to `DNP_5` | Did Not Pick — call attempt number |
-| `WHATSAPP_SENT` | WhatsApp sent after 5 DNPs |
-| `CONTACTED` | Successfully spoke to the lead |
-| `FOLLOWUP_SCHEDULED` | Follow-up call/meeting scheduled |
-| `DEMO_BOOKED` | Demo session booked |
-| `DEMO_DONE` | Demo completed |
-| `CLOSING` | Negotiation/closing stage |
-| `PAYMENT_DONE` | Converted — payment received |
-| `NOT_INTERESTED` | Lead declined |
-| `SWITCH_OFF` | Number unreachable / switched off |
-
-### ActivityType
-
-| Value | When created |
-|-------|-------------|
-| `LEAD_IMPORTED` | Lead added via Excel or manual form |
-| `CALL_ATTEMPTED` | `call-attempted` endpoint called |
-| `WHATSAPP_SENT` | `whatsapp-sent` endpoint called |
-| `STATUS_CHANGE` | `status` endpoint called |
-| `NOTE_ADDED` | `note` endpoint called |
-| `FOLLOWUP_SCHEDULED` | Status updated to `FOLLOWUP_SCHEDULED` |
+`NEW`, `DNP_1`, `DNP_2`, `DNP_3`, `DNP_4`, `DNP_5`, `WHATSAPP_SENT`, `WHATSAPP_RESPONDED`, `CONTACTED`, `FOLLOWUP_SCHEDULED`, `DEMO_BOOKED`, `DEMO_DONE`, `DEMO_NO_SHOW`, `CLOSING`, `PAYMENT_DONE`, `NOT_INTERESTED`, `SWITCH_OFF`
 
 ### LeadSource
+`META_ADS`, `GOOGLE_ADS`, `ORGANIC`, `REFERRAL`, `WALK_IN`, `WEBINAR`, `OTHER`
 
-`META_ADS` | `GOOGLE_ADS` | `ORGANIC` | `REFERRAL` | `WALK_IN` | `OTHER`
+### DemoType
+`ONLINE`, `OFFLINE`
+
+### PreferredTiming
+`MORNING`, `AFTERNOON`, `EVENING`, `NIGHT`
+
+### PaymentType
+`ADVANCE`, `INSTALLMENT`, `FULL_PAYMENT`
+
+### PaymentStatus
+`PENDING`, `PAID`, `OVERDUE`
+
+### ClosingBlocker
+`PRICING_ISSUE`, `NEEDS_EMI`, `NEEDS_TIME`, `COMPARING_COMPETITOR`, `NEEDS_OFFLINE_DEMO`, `FAMILY_DECISION_PENDING`, `OTHER`
+
+### ActivityType
+`CALL_ATTEMPTED`, `WHATSAPP_SENT`, `WHATSAPP_SEQUENCE`, `STATUS_CHANGE`, `NOTE_ADDED`, `LEAD_IMPORTED`, `FOLLOWUP_SCHEDULED`, `PAYMENT_RECORDED`, `WEBINAR_REGISTERED`
 
 ---
 
 ## Error Handling
 
-All responses follow the same wrapper:
+All error responses follow:
 ```json
-{
-  "success": true | false,
-  "message": "Human-readable message",
-  "timestamp": "2026-04-30T10:00:00",
-  "data": { ... }
-}
+{ "success": false, "message": "Human-readable error" }
 ```
 
-| HTTP Status | Meaning |
-|-------------|---------|
-| 200 | Success |
-| 201 | Created (new lead) |
-| 400 | Validation error or business rule violation |
-| 401 | Not authenticated — check cookie |
+| HTTP | Meaning |
+|------|---------|
+| 400 | Validation failed or business rule violation |
+| 401 | Not authenticated (no/expired access_token cookie) |
 | 403 | Authenticated but wrong role |
 | 404 | Resource not found |
 
-**Common 400 errors:**
-
-| Endpoint | Error message |
-|----------|--------------|
-| `POST /leads` | "A lead with this phone number already exists" |
-| `PUT /{id}/call-attempted` | "Maximum call attempts reached. Send WhatsApp." |
-| `PUT /{id}/whatsapp-sent` | "Lead is not eligible for WhatsApp yet. Complete 5 call attempts first." |
-| `PUT /{id}/assign` | "Can only assign leads to SALES or ADMIN users" |
+> Make sure your API client uses `credentials: 'include'` (fetch) or `withCredentials: true` (axios) — without this, cookies are not sent and every request returns 401.

@@ -70,6 +70,10 @@ CREATE INDEX IF NOT EXISTS idx_lead_activities_lead_id
 CREATE INDEX IF NOT EXISTS idx_lead_activities_type_created
     ON lead_activities(activity_type, created_at);
 
+-- Leads: overdue follow-ups count (status = FOLLOWUP_SCHEDULED AND followup_datetime < NOW())
+CREATE INDEX IF NOT EXISTS idx_leads_status_followup
+    ON leads(status, followup_datetime);
+
 -- ---------------------------------------------------------------
 -- 4. updated_at auto-update trigger
 --    (Hibernate @UpdateTimestamp handles this from the app side,

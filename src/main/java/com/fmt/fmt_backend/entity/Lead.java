@@ -1,7 +1,11 @@
 package com.fmt.fmt_backend.entity;
 
+import com.fmt.fmt_backend.enums.ClosingBlocker;
+import com.fmt.fmt_backend.enums.DemoType;
 import com.fmt.fmt_backend.enums.LeadSource;
 import com.fmt.fmt_backend.enums.LeadStatus;
+import com.fmt.fmt_backend.enums.PreferredTiming;
+import java.math.BigDecimal;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -69,10 +73,57 @@ public class Lead extends BaseEntity {
     @Column(name = "last_call_at")
     private LocalDateTime lastCallAt;
 
-    // Fields from digital marketing Excel
+    // Fields from digital marketing Excel / Google Sheet
     @Column(name = "current_level", length = 100)
     private String currentLevel;
 
     @Column(name = "preferred_learning_mode", length = 50)
     private String preferredLearningMode;
+
+    // Original timestamp from the Google Sheet (created_time column)
+    @Column(name = "sheet_created_at")
+    private LocalDateTime sheetCreatedAt;
+
+    // Demo tracking
+    @ToString.Exclude
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "demo_mentor_id")
+    private User demoMentor;
+
+    @Column(name = "demo_scheduled_at")
+    private LocalDateTime demoScheduledAt;
+
+    @Column(name = "demo_conducted_at")
+    private LocalDateTime demoConductedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "demo_type", length = 20)
+    private DemoType demoType;
+
+    // Closing stage
+    @Enumerated(EnumType.STRING)
+    @Column(name = "closing_blocker", length = 50)
+    private ClosingBlocker closingBlocker;
+
+    @Column(name = "closing_comment", columnDefinition = "TEXT")
+    private String closingComment;
+
+    // Preferred call timing (from Google Sheet / webinar form)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "preferred_timings", length = 20)
+    private PreferredTiming preferredTimings;
+
+    // Alternate phone given via WhatsApp response
+    @Column(name = "alternate_phone", length = 20)
+    private String alternatePhone;
+
+    // Who closed the deal (set when status → PAYMENT_DONE)
+    @ToString.Exclude
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "closed_by")
+    private User closedBy;
+
+    // Agreed course fee at closing stage
+    @Column(name = "course_fee", precision = 10, scale = 2)
+    private BigDecimal courseFee;
 }

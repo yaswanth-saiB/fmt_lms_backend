@@ -20,11 +20,6 @@ spring:
     hikari:
       maximum-pool-size: 10
       minimum-idle: 5
-#     Railway will inject these environment variables automatically
-#    url: jdbc:postgresql://${PGHOST}:${PGPORT}/${PGDATABASE}?sslmode=require
-#    username: ${PGUSER}
-#    password: ${PGPASSWORD}
-#    driver-class-name: org.postgresql.Driver
 
 
   # ==========================================
@@ -136,12 +131,12 @@ resend:
       bcc-archive: ${PROMO_BCC_ARCHIVE:true}
 
     support:
-      email: ${SUPPORT_FROM_EMAIL:help@mail.firstmilliontrade.com}
+      email: ${SUPPORT_FROM_EMAIL:help@firstmilliontrade.com}
       name: ${SUPPORT_FROM_NAME:First Million Trade Support}
       bcc-archive: ${SUPPORT_BCC_ARCHIVE:false}
 
     admin:
-      email: ${ADMIN_FROM_EMAIL:admin@mail.firstmilliontrade.com}
+      email: ${ADMIN_FROM_EMAIL:admin@firstmilliontrade.com}
       name: ${ADMIN_FROM_NAME:First Million Trade Admin}
       bcc-archive: ${ADMIN_BCC_ARCHIVE:true}
 
@@ -237,6 +232,15 @@ bunny:
   cdn-hostname: ${BUNNY_CDN_HOSTNAME}          # e.g. vz-xxxxxxxx.b-cdn.net
   token-key: ${BUNNY_TOKEN_KEY}                 # CDN Zone → Token Authentication
   # No webhook secret — Bunny sends no auth header. Validation uses library-id from payload.
+
+# ============================================
+# GOOGLE SHEETS — CRM Lead Sync
+# ============================================
+google:
+  sheets:
+    sheet-id: ${GOOGLE_SHEETS_SHEET_ID:}
+    credentials-path: ${GOOGLE_SHEETS_CREDENTIALS_PATH:}
+    tab-name: FirstMillionTrade-Leads
 
 # ============================================
 # ADMIN SEED (first-time bootstrap)

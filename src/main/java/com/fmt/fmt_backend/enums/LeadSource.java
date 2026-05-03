@@ -6,5 +6,6 @@ public enum LeadSource {
     ORGANIC,
     REFERRAL,
     WALK_IN,
+    WEBINAR,
     OTHER
 }
