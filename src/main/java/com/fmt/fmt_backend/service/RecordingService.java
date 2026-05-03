@@ -1,6 +1,8 @@
 package com.fmt.fmt_backend.service;
 
 import com.fmt.fmt_backend.dto.ManualRecordingRequest;
+import com.fmt.fmt_backend.dto.RegisterExternalRecordingRequest;
+import com.fmt.fmt_backend.dto.UpdateRecordingRequest;
 import com.fmt.fmt_backend.entity.BatchEnrollment;
 import com.fmt.fmt_backend.dto.PlayUrlResponse;
 import com.fmt.fmt_backend.dto.RecordingResponse;
@@ -286,6 +288,11 @@ public class RecordingService {
                     "Only FAILED recordings can be retried. Current status: " + recording.getStatus());
         }
 
+        if (recording.getMeeting() == null) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "This is an externally uploaded recording — it has no Zoom meeting and cannot be retried");
+        }
         String zoomMeetingId = recording.getMeeting().getZoomMeetingId();
         if (zoomMeetingId == null || zoomMeetingId.isBlank()) {
             throw new ResponseStatusException(
@@ -360,7 +367,7 @@ public class RecordingService {
         String zoomDownloadUrl  = r.getZoomDownloadUrl();
         String title            = r.getTitle();
         UUID   recordingId      = r.getId();
-        String zoomMeetingId    = r.getMeeting().getZoomMeetingId();
+        String zoomMeetingId    = r.getMeeting() != null ? r.getMeeting().getZoomMeetingId() : null;
 
         // ---- Step 1: Create video object in Bunny (only once — reuse on retries) ----
         // If a previous attempt already created the video object, reuse that videoId
@@ -694,11 +701,14 @@ public class RecordingService {
                         org.springframework.http.HttpStatus.NOT_FOUND, "Recording not found"));
 
         // Ownership — only the mentor who conducted the class can watch it
-        UUID conductingMentorId = recording.getMeeting().getMentor().getId();
-        if (!conductingMentorId.equals(mentorId)) {
-            throw new ResponseStatusException(
-                    org.springframework.http.HttpStatus.FORBIDDEN,
-                    "This recording is not from one of your classes");
+        // External recordings (no meeting) skip ownership check — accessible to any mentor
+        if (recording.getMeeting() != null) {
+            UUID conductingMentorId = recording.getMeeting().getMentor().getId();
+            if (!conductingMentorId.equals(mentorId)) {
+                throw new ResponseStatusException(
+                        org.springframework.http.HttpStatus.FORBIDDEN,
+                        "This recording is not from one of your classes");
+            }
         }
 
         if (recording.getStatus() == RecordingStatus.PROCESSING ||
@@ -888,6 +898,81 @@ public class RecordingService {
                 .toList();
     }
 
+    // =========================================================================
+    // ADMIN — register an externally uploaded recording (Google Drive → Bunny)
+    // =========================================================================
+
+    @org.springframework.transaction.annotation.Transactional
+    public RecordingResponse adminRegisterExternalRecording(RegisterExternalRecordingRequest request) {
+        Batch batch = batchRepository.findById(request.getBatchId())
+                .orElseThrow(() -> new ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "Batch not found"));
+
+        Recording recording = Recording.builder()
+                .meeting(null)
+                .batch(batch)
+                .title(request.getTitle())
+                .bunnyVideoId(request.getBunnyVideoId())
+                .durationMins(request.getDurationMins())
+                .status(com.fmt.fmt_backend.enums.RecordingStatus.AVAILABLE)
+                .build();
+
+        recording = recordingRepository.save(recording);
+        log.info("External recording registered — batch: {}, bunnyVideoId: {}, title: {}",
+                request.getBatchId(), request.getBunnyVideoId(), request.getTitle());
+        return toMentorRecordingResponse(recording);
+    }
+
+    // =========================================================================
+    // ADMIN — edit recording title / duration
+    // =========================================================================
+
+    @org.springframework.transaction.annotation.Transactional
+    public RecordingResponse adminUpdateRecording(UUID recordingId, UpdateRecordingRequest request) {
+        Recording recording = recordingRepository.findById(recordingId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "Recording not found"));
+
+        recording.setTitle(request.getTitle());
+        if (request.getDurationMins() != null) recording.setDurationMins(request.getDurationMins());
+
+        recording = recordingRepository.save(recording);
+        log.info("Recording {} title updated to: {}", recordingId, request.getTitle());
+        return toMentorRecordingResponse(recording);
+    }
+
+    // =========================================================================
+    // ADMIN — delete a recording (DB + best-effort Bunny delete)
+    // =========================================================================
+
+    @org.springframework.transaction.annotation.Transactional
+    public void adminDeleteRecording(UUID recordingId) {
+        Recording recording = recordingRepository.findById(recordingId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "Recording not found"));
+
+        String bunnyVideoId = recording.getBunnyVideoId();
+
+        recordingRepository.delete(recording);
+        log.info("Recording {} deleted from DB", recordingId);
+
+        // Best-effort Bunny delete — don't fail the whole operation if Bunny API is unavailable
+        if (bunnyVideoId != null && !bunnyVideoId.isBlank()) {
+            try {
+                String url = BUNNY_API_BASE + bunnyLibraryId + "/videos/" + bunnyVideoId;
+                org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+                headers.set("AccessKey", bunnyApiKey);
+                org.springframework.http.HttpEntity<Void> entity =
+                        new org.springframework.http.HttpEntity<>(headers);
+                restTemplate.exchange(url, org.springframework.http.HttpMethod.DELETE, entity, String.class);
+                log.info("Recording {} deleted from Bunny (videoId: {})", recordingId, bunnyVideoId);
+            } catch (Exception e) {
+                log.warn("Could not delete recording {} from Bunny — manual cleanup may be needed. Error: {}",
+                        bunnyVideoId, e.getMessage());
+            }
+        }
+    }
+
     private RecordingResponse toMentorRecordingResponse(Recording r) {
         String courseName = null;
         try {
@@ -974,15 +1059,17 @@ public class RecordingService {
             log.info("Recording available emails queued for {} student(s) in batch {}",
                     enrollments.size(), batchName);
 
-            // Conducting mentor
-            com.fmt.fmt_backend.entity.User mentor = recording.getMeeting().getMentor();
-            emailService.sendRecordingAvailableEmail(
-                    mentor.getEmail(),
-                    mentor.getFirstName(),
-                    recordingTitle,
-                    batchName,
-                    recordingUrl);
-            log.info("Recording available email queued for mentor {}", mentor.getEmail());
+            // Conducting mentor — skip email for externally uploaded recordings (no meeting)
+            if (recording.getMeeting() != null) {
+                com.fmt.fmt_backend.entity.User mentor = recording.getMeeting().getMentor();
+                emailService.sendRecordingAvailableEmail(
+                        mentor.getEmail(),
+                        mentor.getFirstName(),
+                        recordingTitle,
+                        batchName,
+                        recordingUrl);
+                log.info("Recording available email queued for mentor {}", mentor.getEmail());
+            }
 
         } catch (Exception e) {
             // Non-fatal — recording is already AVAILABLE; email failure must not roll back anything

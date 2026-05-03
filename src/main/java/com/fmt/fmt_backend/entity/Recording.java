@@ -20,7 +20,7 @@ public class Recording extends BaseEntity {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "meeting_id", nullable = false)
+    @JoinColumn(name = "meeting_id")
     private Meeting meeting;
 
     @ManyToOne(fetch = FetchType.LAZY)

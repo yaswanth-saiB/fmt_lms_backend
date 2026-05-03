@@ -146,6 +146,15 @@ public class AdminController {
         return ResponseEntity.ok(ApiResponse.success("Batch created", adminService.adminCreateBatch(request)));
     }
 
+    @PutMapping("/batches/{batchId}")
+    @Operation(summary = "Update batch details — rename, change dates, max students, description")
+    public ResponseEntity<ApiResponse<BatchResponse>> updateBatch(
+            @PathVariable UUID batchId,
+            @Valid @RequestBody UpdateBatchRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Batch updated",
+                adminService.adminUpdateBatch(batchId, request)));
+    }
+
     @PutMapping("/batches/{batchId}/status")
     @Operation(summary = "Update batch status")
     public ResponseEntity<ApiResponse<BatchResponse>> updateBatchStatus(
@@ -153,6 +162,15 @@ public class AdminController {
             @Valid @RequestBody BatchStatusRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Batch status updated",
                 adminService.adminUpdateBatchStatus(batchId, request.getStatus())));
+    }
+
+    @DeleteMapping("/batches/{batchId}")
+    @Operation(summary = "Delete a batch",
+               description = "Blocked if the batch has active enrolled students or any recordings. " +
+                             "Unenroll all students and delete recordings first.")
+    public ResponseEntity<ApiResponse<Void>> deleteBatch(@PathVariable UUID batchId) {
+        adminService.adminDeleteBatch(batchId);
+        return ResponseEntity.ok(ApiResponse.success("Batch deleted", null));
     }
 
     // ---------------------------------------------------------------
@@ -338,6 +356,35 @@ public class AdminController {
         recordingService.processRecordingAsync(recordingId);
         return ResponseEntity.ok(ApiResponse.success(
                 "Recording retry started. Check status in ~15–30 minutes.", null));
+    }
+
+    @PostMapping("/recordings/register-external")
+    @Operation(summary = "Register an externally uploaded recording",
+               description = "Use when a class recording was saved locally (not Zoom Cloud) and manually uploaded to Bunny.net. " +
+                             "Upload the MP4 directly in the Bunny dashboard first, copy the Video ID, then call this endpoint.")
+    public ResponseEntity<ApiResponse<RecordingResponse>> registerExternalRecording(
+            @Valid @RequestBody RegisterExternalRecordingRequest request) {
+        return ResponseEntity.status(201).body(ApiResponse.success(
+                "Recording registered successfully", recordingService.adminRegisterExternalRecording(request)));
+    }
+
+    @PutMapping("/recordings/{recordingId}")
+    @Operation(summary = "Edit recording title and/or duration",
+               description = "Use this to fix wrong naming (e.g. 'Day 4' → 'Day 5'). Safe to call on any recording status.")
+    public ResponseEntity<ApiResponse<RecordingResponse>> updateRecording(
+            @PathVariable UUID recordingId,
+            @Valid @RequestBody UpdateRecordingRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Recording updated",
+                recordingService.adminUpdateRecording(recordingId, request)));
+    }
+
+    @DeleteMapping("/recordings/{recordingId}")
+    @Operation(summary = "Delete a recording",
+               description = "Removes the recording from the DB and attempts to delete the video from Bunny.net. " +
+                             "If Bunny deletion fails (e.g. already gone), the DB record is still removed.")
+    public ResponseEntity<ApiResponse<Void>> deleteRecording(@PathVariable UUID recordingId) {
+        recordingService.adminDeleteRecording(recordingId);
+        return ResponseEntity.ok(ApiResponse.success("Recording deleted", null));
     }
 
     // ---------------------------------------------------------------

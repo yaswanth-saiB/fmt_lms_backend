@@ -24,7 +24,8 @@ public interface RecordingRepository extends JpaRepository<Recording, UUID> {
     List<Recording> findByBatchOrderByCreatedAtDesc(Batch batch);
 
     // Eagerly fetches meeting to avoid LazyInitializationException in async processing
-    @Query("SELECT r FROM Recording r JOIN FETCH r.meeting WHERE r.id = :id")
+    // LEFT JOIN so recordings with no meeting (external uploads) are also returned
+    @Query("SELECT r FROM Recording r LEFT JOIN FETCH r.meeting WHERE r.id = :id")
     Optional<Recording> findByIdWithMeeting(@Param("id") UUID id);
 
     // Used by Zoom webhook — find existing recording for a meeting to avoid duplicates
@@ -45,4 +46,6 @@ public interface RecordingRepository extends JpaRepository<Recording, UUID> {
 
     // Nightly expiry job — find all AVAILABLE recordings past their expiry date
     List<Recording> findByStatusAndExpiresAtBefore(RecordingStatus status, LocalDateTime now);
+
+    long countByBatch(Batch batch);
 }

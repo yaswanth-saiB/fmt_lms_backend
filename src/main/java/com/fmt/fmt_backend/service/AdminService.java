@@ -304,6 +304,49 @@ public class AdminService {
         return batchService.updateBatchStatus(batchId, status, batch.getCourse().getMentor().getId());
     }
 
+    @Transactional
+    public BatchResponse adminUpdateBatch(UUID batchId, UpdateBatchRequest request) {
+        com.fmt.fmt_backend.entity.Batch batch = batchRepository.findById(batchId)
+                .orElseThrow(() -> new RuntimeException("Batch not found"));
+
+        batch.setName(request.getName());
+        if (request.getDescription() != null) batch.setDescription(request.getDescription());
+        if (request.getStartDate() != null) batch.setStartDate(request.getStartDate());
+        if (request.getEndDate() != null) batch.setEndDate(request.getEndDate());
+        if (request.getMaxStudents() != null) batch.setMaxStudents(request.getMaxStudents());
+
+        com.fmt.fmt_backend.entity.Batch saved = batchRepository.save(batch);
+        log.info("Batch {} updated — new name: {}", batchId, saved.getName());
+        return batchService.toResponse(saved);
+    }
+
+    @Transactional
+    public void adminDeleteBatch(UUID batchId) {
+        com.fmt.fmt_backend.entity.Batch batch = batchRepository.findById(batchId)
+                .orElseThrow(() -> new RuntimeException("Batch not found"));
+
+        long activeEnrollments = batchEnrollmentRepository.countByBatchAndIsActiveTrue(batch);
+        if (activeEnrollments > 0) {
+            throw new RuntimeException(
+                "Cannot delete batch with " + activeEnrollments + " active student(s). Unenroll them first.");
+        }
+
+        long meetings = meetingRepository.countByBatch(batch);
+        if (meetings > 0) {
+            throw new RuntimeException(
+                "Cannot delete batch that has " + meetings + " meeting(s). Cancel or delete them first.");
+        }
+
+        long recordings = recordingRepository.countByBatch(batch);
+        if (recordings > 0) {
+            throw new RuntimeException(
+                "Cannot delete batch that has " + recordings + " recording(s). Delete them first.");
+        }
+
+        batchRepository.delete(batch);
+        log.info("Batch {} deleted by admin", batchId);
+    }
+
     // ---------------------------------------------------------------
     // Admin Content Management — Students / Enrollment
     // ---------------------------------------------------------------

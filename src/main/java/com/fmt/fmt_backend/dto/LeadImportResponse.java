@@ -10,6 +10,8 @@ import java.util.List;
 public class LeadImportResponse {
 
     private int imported;
-    private int skipped;
+    private int skipped;       // total skipped = duplicates + blankPhone
+    private int duplicates;    // phone already exists in CRM
+    private int blankPhone;    // row had no phone number
     private List<String> errors;
 }

@@ -48,7 +48,8 @@ public class SheetSyncService {
         log.info("🔄 Google Sheets sync starting — trigger: {}", triggerType);
 
         int imported = 0;
-        int skipped = 0;
+        int duplicates = 0;
+        int blankPhone = 0;
         List<String> errors = new ArrayList<>();
         int sheetRowsRead = 0;
 
@@ -57,8 +58,8 @@ public class SheetSyncService {
 
             if (allRows.size() < 2) {
                 log.info("📄 Sheet has no data rows");
-                saveLog(sheetRowsRead, imported, skipped, triggerType, triggeredBy, errors);
-                return LeadImportResponse.builder().imported(0).skipped(0).errors(errors).build();
+                saveLog(sheetRowsRead, imported, 0, triggerType, triggeredBy, errors);
+                return LeadImportResponse.builder().imported(0).skipped(0).duplicates(0).blankPhone(0).errors(errors).build();
             }
 
             // Build header index map from row 0
@@ -89,13 +90,21 @@ public class SheetSyncService {
 
                 try {
                     String phone = cell(row, phoneIdx).replaceAll("[^0-9+]", "");
-                    if (phone.isBlank()) { skipped++; continue; }
+                    if (phone.isBlank()) {
+                        blankPhone++;
+                        errors.add("Row " + (i + 1) + " — blank phone (skipped)");
+                        continue;
+                    }
 
                     // Normalise: strip country code
                     if (phone.startsWith("91") && phone.length() == 12) phone = phone.substring(2);
                     if (phone.startsWith("+91") && phone.length() == 13) phone = phone.substring(3);
 
-                    if (leadRepository.existsByPhone(phone)) { skipped++; continue; }
+                    if (leadRepository.existsByPhone(phone)) {
+                        duplicates++;
+                        errors.add("Row " + (i + 1) + " — duplicate: " + phone + " (already in CRM)");
+                        continue;
+                    }
 
                     String name = nameIdx != null ? cell(row, nameIdx) : "";
                     if (name.isBlank()) name = "Unknown";
@@ -144,9 +153,15 @@ public class SheetSyncService {
             errors.add("Sync failed: " + e.getMessage());
         }
 
-        saveLog(sheetRowsRead, imported, skipped, triggerType, triggeredBy, errors);
-        log.info("✅ Sheet sync done — imported: {}, skipped: {}, errors: {}", imported, skipped, errors.size());
-        return LeadImportResponse.builder().imported(imported).skipped(skipped).errors(errors).build();
+        saveLog(sheetRowsRead, imported, duplicates + blankPhone, triggerType, triggeredBy, errors);
+        log.info("✅ Sheet sync done — imported: {}, duplicates: {}, blankPhone: {}, errors: {}", imported, duplicates, blankPhone, errors.size());
+        return LeadImportResponse.builder()
+                .imported(imported)
+                .skipped(duplicates + blankPhone)
+                .duplicates(duplicates)
+                .blankPhone(blankPhone)
+                .errors(errors)
+                .build();
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────────
