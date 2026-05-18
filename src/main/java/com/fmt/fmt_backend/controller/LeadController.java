@@ -283,6 +283,29 @@ public class LeadController {
         return ResponseEntity.status(response.isSuccess() ? 200 : 400).body(response);
     }
 
+    @PutMapping("/leads/{id}/payments/{paymentId}")
+    @Operation(summary = "Edit a payment (amount, type, due date, notes)", description = "Role: ADMIN or SALES. Works on both PENDING and PAID payments.")
+    public ResponseEntity<ApiResponse<LeadPaymentResponse>> editPayment(
+            @PathVariable UUID id,
+            @PathVariable UUID paymentId,
+            @Valid @RequestBody UpdateLeadPaymentRequest request) {
+
+        User user = requireCurrentUser();
+        ApiResponse<LeadPaymentResponse> response = leadService.editPayment(id, paymentId, request, user);
+        return ResponseEntity.status(response.isSuccess() ? 200 : 400).body(response);
+    }
+
+    @DeleteMapping("/leads/{id}/payments/{paymentId}")
+    @Operation(summary = "Delete a payment record", description = "Role: ADMIN or SALES. Logs deletion in activity history.")
+    public ResponseEntity<ApiResponse<String>> deletePayment(
+            @PathVariable UUID id,
+            @PathVariable UUID paymentId) {
+
+        User user = requireCurrentUser();
+        ApiResponse<String> response = leadService.deletePayment(id, paymentId, user);
+        return ResponseEntity.status(response.isSuccess() ? 200 : 400).body(response);
+    }
+
     // ─────────────────────────────────────────────
     // Per-rep stats
     // ─────────────────────────────────────────────

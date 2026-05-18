@@ -16,14 +16,17 @@ import java.util.UUID;
 @Repository
 public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
 
-    List<Meeting> findByBatchOrderByCreatedAtDesc(Batch batch);
+    // All meetings that include this batch (many-to-many join)
+    @Query("SELECT m FROM Meeting m JOIN m.batches b WHERE b = :batch ORDER BY m.createdAt DESC")
+    List<Meeting> findByBatch(@Param("batch") Batch batch);
 
-    List<Meeting> findByBatchAndStatusOrderByScheduledAtAsc(Batch batch, MeetingStatus status);
+    @Query("SELECT m FROM Meeting m JOIN m.batches b WHERE b = :batch AND m.status = :status ORDER BY m.scheduledAt ASC")
+    List<Meeting> findByBatchAndStatus(@Param("batch") Batch batch, @Param("status") MeetingStatus status);
 
     Optional<Meeting> findByZoomMeetingId(String zoomMeetingId);
 
-    // Returns UPCOMING + LIVE so student sees both scheduled and currently-in-progress classes
-    @Query("SELECT m FROM Meeting m WHERE m.batch.id IN " +
+    // Returns UPCOMING + LIVE for all batches the student is enrolled in (multi-batch aware)
+    @Query("SELECT DISTINCT m FROM Meeting m JOIN m.batches b WHERE b.id IN " +
            "(SELECT e.batch.id FROM BatchEnrollment e WHERE e.student.id = :studentId AND e.isActive = true) " +
            "AND m.status IN ('UPCOMING', 'LIVE') ORDER BY m.scheduledAt ASC")
     List<Meeting> findUpcomingMeetingsForStudent(@Param("studentId") UUID studentId);
@@ -34,14 +37,16 @@ public interface MeetingRepository extends JpaRepository<Meeting, UUID> {
     @Query("SELECT COUNT(m) FROM Meeting m WHERE m.mentor.id = :mentorId")
     long countByMentorId(@Param("mentorId") UUID mentorId);
 
-    long countByBatch(Batch batch);
+    // Count meetings that include this batch
+    @Query("SELECT COUNT(m) FROM Meeting m JOIN m.batches b WHERE b = :batch")
+    long countByBatch(@Param("batch") Batch batch);
 
     // Admin — all upcoming classes across all batches
     @Query("SELECT m FROM Meeting m WHERE m.status = 'UPCOMING' ORDER BY m.scheduledAt ASC")
     List<Meeting> findAllUpcoming(org.springframework.data.domain.Pageable pageable);
 
     // Time conflict check — all non-finished meetings for a batch
-    @Query("SELECT m FROM Meeting m WHERE m.batch = :batch AND m.status NOT IN ('ENDED', 'CANCELLED')")
+    @Query("SELECT m FROM Meeting m JOIN m.batches b WHERE b = :batch AND m.status NOT IN ('ENDED', 'CANCELLED')")
     List<Meeting> findActiveOrUpcomingByBatch(@Param("batch") Batch batch);
 
     // Auto-end job — mark expired meetings as ENDED in one native update

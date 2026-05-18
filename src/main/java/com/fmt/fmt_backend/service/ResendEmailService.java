@@ -15,6 +15,7 @@ import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -125,6 +126,35 @@ public class ResendEmailService {
         sendEmail(to, subject, buildAdminTemplate(message), sender, EmailType.ADMIN);
     }
 
+    /**
+     * Sends one recording-ready email — mentor in To (greeted by name), all students in BCC.
+     * Archive email is also added to BCC if enabled. Students cannot see each other.
+     */
+    @Async
+    public void sendRecordingReadyEmail(String mentorEmail, String mentorFirstName,
+                                        List<String> studentEmails,
+                                        String recordingTitle, String batchName,
+                                        String recordingUrl) {
+        SenderInfo sender = senderMap.get(EmailType.RECORDING);
+
+        Context ctx = new Context();
+        ctx.setVariable("firstName",      mentorFirstName);
+        ctx.setVariable("recordingTitle", recordingTitle);
+        ctx.setVariable("batchName",      batchName);
+        ctx.setVariable("recordingUrl",   recordingUrl);
+        ctx.setVariable("year",           LocalDateTime.now().getYear());
+        String htmlContent = templateEngine.process("email/recording-available-email", ctx);
+
+        List<String> bcc = new ArrayList<>(studentEmails);
+        if (sender.isBccArchive() && archiveEmail != null) {
+            bcc.add(archiveEmail);
+        }
+
+        sendEmailWithBcc(mentorEmail, bcc, "Recording Available — " + recordingTitle,
+                htmlContent, sender, EmailType.RECORDING);
+    }
+
+    /** Fallback: individual recording email when there is no mentor (external recordings). */
     @Async
     public void sendRecordingAvailableEmail(String to, String firstName,
                                             String recordingTitle, String batchName,
@@ -192,6 +222,29 @@ public class ResendEmailService {
 
     private String nvl(String value) {
         return value != null ? value : "—";
+    }
+
+    private void sendEmailWithBcc(String to, List<String> bccAddresses, String subject,
+                                  String htmlContent, SenderInfo sender, EmailType type) {
+        if (!emailEnabled) {
+            log.info("📧 [{}] Would send to: {} with {} BCC (email disabled)", type, maskEmail(to), bccAddresses.size());
+            return;
+        }
+        try {
+            CreateEmailOptions.Builder builder = CreateEmailOptions.builder()
+                    .from(sender.getName() + " <" + sender.getEmail() + ">")
+                    .to(List.of(to))
+                    .subject(subject)
+                    .html(htmlContent);
+            if (!bccAddresses.isEmpty()) {
+                builder.bcc(bccAddresses);
+            }
+            CreateEmailResponse response = resend.emails().send(builder.build());
+            log.info("✅ [{}] Email sent to {} with {} BCC recipient(s) (ID: {})",
+                    type, maskEmail(to), bccAddresses.size(), response.getId());
+        } catch (ResendException e) {
+            log.error("❌ [{}] Failed to send to {}: {}", type, maskEmail(to), e.getMessage());
+        }
     }
 
     private void sendEmail(String to, String subject, String htmlContent,

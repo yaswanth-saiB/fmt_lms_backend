@@ -173,20 +173,21 @@ public class ZoomWebhookController {
 
         log.info("recording.completed: meeting={}, topic='{}', duration={}min", zoomMeetingId, topic, durationMins);
 
-        // Save recording row synchronously (commits before async starts)
-        Recording saved = recordingService.createRecordingFromZoomEvent(
+        // Save one recording row per batch synchronously (commits before async starts)
+        List<Recording> saved = recordingService.createRecordingFromZoomEvent(
                 zoomMeetingId, downloadUrl, topic, durationMins);
 
-        if (saved == null) {
+        if (saved.isEmpty()) {
             // Either duplicate or meeting not found — already logged in service
             return;
         }
 
-        // Trigger async download → Bunny upload in background
-        // Zoom won't wait for this — we've already committed the DB row above
-        recordingService.processRecordingAsync(saved.getId());
+        // Process only the first recording — it downloads from Zoom and uploads to Bunny.
+        // After the Bunny video object is created, processRecording automatically copies the
+        // bunnyVideoId to all sibling recordings (other batches of the same meeting).
+        recordingService.processRecordingAsync(saved.get(0).getId());
 
-        log.info("Recording {} queued for async processing", saved.getId());
+        log.info("Recording {} queued for async processing ({} batch(es) total)", saved.get(0).getId(), saved.size());
     }
 
     private void handleMeetingStarted(JsonNode root) {

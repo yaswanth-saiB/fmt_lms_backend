@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -13,8 +14,7 @@ public class MeetingResponse {
     private UUID id;
     private String zoomMeetingId;
     private String topic;
-    private UUID batchId;
-    private String batchName;
+    private List<BatchSummaryResponse> batches;
     private UUID mentorId;
     private String mentorName;
     private MeetingStatus status;

@@ -39,6 +39,7 @@ import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -109,51 +110,55 @@ public class RecordingService {
     // =========================================================================
 
     /**
-     * Creates a Recording row when Zoom fires recording.completed.
+     * Creates one Recording row per batch when Zoom fires recording.completed.
      *
-     * Called synchronously from the webhook controller so the DB row is committed
-     * before the async processing job starts. Returns the saved entity so the
-     * controller can pass its ID to processRecordingAsync().
+     * A meeting can be linked to multiple batches — each batch gets its own Recording
+     * row so students in each batch can access the recording independently.
+     * All sibling recordings share the same zoomDownloadUrl; only the first one is
+     * actually downloaded and uploaded to Bunny (processRecordingAsync copies the
+     * resulting bunnyVideoId to the others after upload completes).
      *
-     * Returns null if the meeting is not found (Zoom recorded a meeting we don't
-     * know about — can happen if test meetings are run outside the app).
+     * Returns an empty list if the meeting is not found or was already processed.
      */
     @Transactional
-    public Recording createRecordingFromZoomEvent(String zoomMeetingId,
-                                                  String downloadUrl,
-                                                  String topic,
-                                                  Integer durationMins) {
+    public List<Recording> createRecordingFromZoomEvent(String zoomMeetingId,
+                                                        String downloadUrl,
+                                                        String topic,
+                                                        Integer durationMins) {
         // Idempotency — Zoom can fire the webhook more than once for the same meeting
-        if (recordingRepository.findByMeeting_ZoomMeetingId(zoomMeetingId).isPresent()) {
+        if (recordingRepository.existsByMeeting_ZoomMeetingId(zoomMeetingId)) {
             log.info("Recording already exists for Zoom meeting {} — skipping duplicate webhook", zoomMeetingId);
-            return null;
+            return List.of();
         }
 
         Meeting meeting = meetingRepository.findByZoomMeetingId(zoomMeetingId).orElse(null);
         if (meeting == null) {
             log.warn("Zoom webhook: no meeting found for zoomMeetingId={} — ignoring", zoomMeetingId);
-            return null;
+            return List.of();
         }
 
-        Batch batch = meeting.getBatch();
+        String resolvedTitle = topic != null ? topic : meeting.getTopic();
+        List<Recording> saved = new ArrayList<>();
 
-        // Access expires 2 months after batch end date (or 3 months from now as fallback)
-        LocalDateTime expiresAt = batch.getEndDate() != null
-                ? batch.getEndDate().plusMonths(2).atStartOfDay()
-                : LocalDateTime.now().plusMonths(3);
+        for (Batch batch : meeting.getBatches()) {
+            LocalDateTime expiresAt = batch.getEndDate() != null
+                    ? batch.getEndDate().plusMonths(2).atStartOfDay()
+                    : LocalDateTime.now().plusMonths(3);
 
-        Recording recording = Recording.builder()
-                .meeting(meeting)
-                .batch(batch)
-                .zoomDownloadUrl(downloadUrl)
-                .title(topic != null ? topic : meeting.getTopic())
-                .durationMins(durationMins)
-                .status(RecordingStatus.PROCESSING)
-                .expiresAt(expiresAt)
-                .build();
+            Recording recording = Recording.builder()
+                    .meeting(meeting)
+                    .batch(batch)
+                    .zoomDownloadUrl(downloadUrl)
+                    .title(resolvedTitle)
+                    .durationMins(durationMins)
+                    .status(RecordingStatus.PROCESSING)
+                    .expiresAt(expiresAt)
+                    .build();
 
-        Recording saved = recordingRepository.save(recording);
-        log.info("Recording row created: id={}, meeting={}, status=PROCESSING", saved.getId(), zoomMeetingId);
+            saved.add(recordingRepository.save(recording));
+        }
+
+        log.info("Recording rows created: count={}, meeting={}, status=PROCESSING", saved.size(), zoomMeetingId);
         return saved;
     }
 
@@ -205,8 +210,10 @@ public class RecordingService {
                             org.springframework.http.HttpStatus.NOT_FOUND, "Batch not found"));
             String placeholderTitle = request.getTitle() != null
                     ? request.getTitle() : "Manual Recording — Zoom " + zoomMeetingId;
+            java.util.Set<Batch> placeholderBatches = new java.util.HashSet<>();
+            placeholderBatches.add(batch);
             meeting = Meeting.builder()
-                    .batch(batch)
+                    .batches(placeholderBatches)
                     .mentor(batch.getCourse().getMentor())
                     .zoomMeetingId(zoomMeetingId)
                     .topic(placeholderTitle)
@@ -218,7 +225,7 @@ public class RecordingService {
         }
 
         // Step 2 — idempotency: don't create a second recording for the same meeting
-        if (recordingRepository.findByMeeting_ZoomMeetingId(zoomMeetingId).isPresent()) {
+        if (recordingRepository.existsByMeeting_ZoomMeetingId(zoomMeetingId)) {
             throw new ResponseStatusException(
                     org.springframework.http.HttpStatus.CONFLICT,
                     "A recording already exists for Zoom meeting " + zoomMeetingId
@@ -228,17 +235,20 @@ public class RecordingService {
         // Step 3 — fetch fresh download URL from Zoom API (includes a valid token)
         String downloadUrl = zoomService.fetchRecordingDownloadUrl(zoomMeetingId);
 
-        // Step 4 — build and save the recording row
-        Batch batch = meeting.getBatch();
+        // Step 4 — build and save one recording row per batch
+        // For a placeholder meeting the batches set contains exactly the one batch admin specified.
+        // For a real meeting the batches set matches all batches the class was created for.
         String title = request.getTitle() != null ? request.getTitle() : meeting.getTopic();
         Integer durationMins = request.getDurationMins() != null
                 ? request.getDurationMins() : meeting.getDurationMins();
 
+        // Use the first batch for the response (primary batch)
+        Batch batch = meeting.getBatches().iterator().next();
         LocalDateTime expiresAt = batch.getEndDate() != null
                 ? batch.getEndDate().plusMonths(2).atStartOfDay()
                 : LocalDateTime.now().plusMonths(3);
 
-        Recording recording = Recording.builder()
+        Recording primaryRecording = Recording.builder()
                 .meeting(meeting)
                 .batch(batch)
                 .zoomDownloadUrl(downloadUrl)
@@ -248,8 +258,27 @@ public class RecordingService {
                 .expiresAt(expiresAt)
                 .build();
 
-        Recording saved = recordingRepository.save(recording);
+        Recording saved = recordingRepository.save(primaryRecording);
         log.info("Manual recording created: id={}, meeting={}, status=PROCESSING", saved.getId(), zoomMeetingId);
+
+        // Create sibling recordings for any additional batches on this meeting
+        for (Batch siblingBatch : meeting.getBatches()) {
+            if (siblingBatch.getId().equals(batch.getId())) continue;
+            LocalDateTime siblingExpiresAt = siblingBatch.getEndDate() != null
+                    ? siblingBatch.getEndDate().plusMonths(2).atStartOfDay()
+                    : LocalDateTime.now().plusMonths(3);
+            Recording sibling = Recording.builder()
+                    .meeting(meeting)
+                    .batch(siblingBatch)
+                    .zoomDownloadUrl(downloadUrl)
+                    .title(title)
+                    .durationMins(durationMins)
+                    .status(RecordingStatus.PROCESSING)
+                    .expiresAt(siblingExpiresAt)
+                    .build();
+            recordingRepository.save(sibling);
+            log.info("Manual recording sibling created for batch {}", siblingBatch.getId());
+        }
 
         // Resolve batch/course names while still inside the transaction (lazy-safe)
         String courseName = null;
@@ -373,6 +402,8 @@ public class RecordingService {
         // If a previous attempt already created the video object, reuse that videoId
         // instead of creating another orphan in Bunny.
         String bunnyVideoId = r.getBunnyVideoId();
+        UUID meetingId = r.getMeeting() != null ? r.getMeeting().getId() : null;
+
         if (bunnyVideoId == null) {
             // Get or create the Bunny collection for this batch (lazy — created on first recording)
             // Use getId() on the proxy — safe, Hibernate always has the ID without initializing
@@ -389,6 +420,19 @@ public class RecordingService {
             recordingRepository.save(r); // persist early so retries pick up the same videoId
             log.info("Bunny video object created: videoId={} collectionId={} for recording={}",
                     bunnyVideoId, collectionId, recordingId);
+
+            // Copy bunnyVideoId to sibling recordings (same meeting, other batches) so they all
+            // share the same Bunny video — the Bunny webhook will mark all of them AVAILABLE at once.
+            if (meetingId != null) {
+                String finalBunnyVideoId = bunnyVideoId;
+                recordingRepository.findByMeeting_IdAndBunnyVideoIdIsNull(meetingId)
+                        .forEach(sibling -> {
+                            sibling.setBunnyVideoId(finalBunnyVideoId);
+                            recordingRepository.save(sibling);
+                            log.info("Copied bunnyVideoId={} to sibling recording {} (batch {})",
+                                    finalBunnyVideoId, sibling.getId(), sibling.getBatch().getId());
+                        });
+            }
         } else {
             log.info("Reusing existing Bunny videoId={} for recording={} (retry)", bunnyVideoId, recordingId);
         }
@@ -421,35 +465,45 @@ public class RecordingService {
 
     @Transactional
     public void handleBunnyWebhook(String bunnyVideoId, int status) {
-        Recording recording = recordingRepository.findByBunnyVideoId(bunnyVideoId).orElse(null);
-        if (recording == null) {
-            log.warn("Bunny webhook: no recording found for videoId={}", bunnyVideoId);
+        // A Bunny video is shared across all batch recordings for the same meeting —
+        // fetch all of them so every batch's recording is updated in one webhook.
+        List<Recording> recordings = recordingRepository.findAllByBunnyVideoId(bunnyVideoId);
+        if (recordings.isEmpty()) {
+            log.warn("Bunny webhook: no recordings found for videoId={}", bunnyVideoId);
             return;
         }
 
         if (status == 4) {
-            // Bunny status 4 = ready
-            if (recording.getStatus() == RecordingStatus.AVAILABLE) {
-                log.info("Recording {} already AVAILABLE — ignoring duplicate Bunny webhook", recording.getId());
-                return;
+            // Bunny status 4 = ready — mark every batch recording AVAILABLE
+            boolean anyUpdated = false;
+            for (Recording recording : recordings) {
+                if (recording.getStatus() == RecordingStatus.AVAILABLE) {
+                    log.info("Recording {} already AVAILABLE — skipping", recording.getId());
+                    continue;
+                }
+                recording.setStatus(RecordingStatus.AVAILABLE);
+                recordingRepository.save(recording);
+                log.info("Recording {} is now AVAILABLE (Bunny ready, batch {})",
+                        recording.getId(), recording.getBatch().getId());
+                notifyRecordingAvailable(recording);
+                anyUpdated = true;
             }
-            recording.setStatus(RecordingStatus.AVAILABLE);
-            recordingRepository.save(recording);
-            log.info("Recording {} is now AVAILABLE (Bunny ready)", recording.getId());
-            notifyRecordingAvailable(recording);
-            // Delete from Zoom now that Bunny encoding is confirmed successful.
-            // Doing it here (not after upload) ensures we still have the Zoom source
-            // available if Bunny encoding had failed and admin needed to retry.
-            String zoomMeetingId = recording.getMeeting() != null
-                    ? recording.getMeeting().getZoomMeetingId() : null;
-            if (zoomMeetingId != null) {
-                deleteZoomRecording(zoomMeetingId);
+            if (anyUpdated) {
+                // Delete from Zoom once — all recordings share the same meeting
+                Recording first = recordings.get(0);
+                String zoomMeetingId = first.getMeeting() != null
+                        ? first.getMeeting().getZoomMeetingId() : null;
+                if (zoomMeetingId != null) {
+                    deleteZoomRecording(zoomMeetingId);
+                }
             }
         } else if (status == 5) {
-            // Bunny status 5 = error
-            recording.setStatus(RecordingStatus.FAILED);
-            recordingRepository.save(recording);
-            log.error("Recording {} FAILED — Bunny encoding error (videoId={})", recording.getId(), bunnyVideoId);
+            // Bunny status 5 = error — mark all FAILED
+            for (Recording recording : recordings) {
+                recording.setStatus(RecordingStatus.FAILED);
+                recordingRepository.save(recording);
+                log.error("Recording {} FAILED — Bunny encoding error (videoId={})", recording.getId(), bunnyVideoId);
+            }
         } else {
             log.debug("Bunny webhook: unhandled status {} for videoId={}", status, bunnyVideoId);
         }
@@ -1042,33 +1096,38 @@ public class RecordingService {
             Batch batch = recording.getBatch();
             String recordingTitle = recording.getTitle();
             String batchName = batch.getName();
-            // Deep link to the batch recordings tab in the app — requires login
             String recordingUrl = frontendUrl + "/dashboard/recordings?batchId=" + batch.getId();
 
-            // Enrolled students
             List<BatchEnrollment> enrollments = batchEnrollmentRepository.findByBatchAndIsActiveTrue(batch);
-            for (BatchEnrollment enrollment : enrollments) {
-                com.fmt.fmt_backend.entity.User student = enrollment.getStudent();
-                emailService.sendRecordingAvailableEmail(
-                        student.getEmail(),
-                        student.getFirstName(),
-                        recordingTitle,
-                        batchName,
-                        recordingUrl);
-            }
-            log.info("Recording available emails queued for {} student(s) in batch {}",
-                    enrollments.size(), batchName);
+            List<String> studentEmails = enrollments.stream()
+                    .map(e -> e.getStudent().getEmail())
+                    .collect(java.util.stream.Collectors.toList());
 
-            // Conducting mentor — skip email for externally uploaded recordings (no meeting)
             if (recording.getMeeting() != null) {
+                // One email: mentor in To (greeted by name), all students in BCC
                 com.fmt.fmt_backend.entity.User mentor = recording.getMeeting().getMentor();
-                emailService.sendRecordingAvailableEmail(
+                emailService.sendRecordingReadyEmail(
                         mentor.getEmail(),
                         mentor.getFirstName(),
+                        studentEmails,
                         recordingTitle,
                         batchName,
                         recordingUrl);
-                log.info("Recording available email queued for mentor {}", mentor.getEmail());
+                log.info("Recording ready email queued — mentor: {}, {} student(s) in BCC, batch: {}",
+                        mentor.getEmail(), studentEmails.size(), batchName);
+            } else {
+                // External recording (no meeting/mentor) — send individually to each student
+                for (BatchEnrollment enrollment : enrollments) {
+                    com.fmt.fmt_backend.entity.User student = enrollment.getStudent();
+                    emailService.sendRecordingAvailableEmail(
+                            student.getEmail(),
+                            student.getFirstName(),
+                            recordingTitle,
+                            batchName,
+                            recordingUrl);
+                }
+                log.info("Recording available emails queued for {} student(s) (external recording, no mentor), batch: {}",
+                        studentEmails.size(), batchName);
             }
 
         } catch (Exception e) {

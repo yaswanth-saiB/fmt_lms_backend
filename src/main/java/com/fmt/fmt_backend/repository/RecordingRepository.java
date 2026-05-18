@@ -28,11 +28,15 @@ public interface RecordingRepository extends JpaRepository<Recording, UUID> {
     @Query("SELECT r FROM Recording r LEFT JOIN FETCH r.meeting WHERE r.id = :id")
     Optional<Recording> findByIdWithMeeting(@Param("id") UUID id);
 
-    // Used by Zoom webhook — find existing recording for a meeting to avoid duplicates
-    Optional<Recording> findByMeeting_ZoomMeetingId(String zoomMeetingId);
+    // Idempotency check — one meeting now produces N recordings (one per batch);
+    // use exists to avoid NonUniqueResultException
+    boolean existsByMeeting_ZoomMeetingId(String zoomMeetingId);
 
-    // Used by Bunny webhook — mark recording AVAILABLE once Bunny finishes processing
-    Optional<Recording> findByBunnyVideoId(String bunnyVideoId);
+    // Used by Bunny webhook — a video ID is shared across all batch recordings for the same meeting
+    List<Recording> findAllByBunnyVideoId(String bunnyVideoId);
+
+    // Used in processRecording to copy bunnyVideoId to sibling recordings (same meeting, other batches)
+    List<Recording> findByMeeting_IdAndBunnyVideoIdIsNull(UUID meetingId);
 
     @Query("SELECT r FROM Recording r WHERE r.batch.id IN " +
            "(SELECT e.batch.id FROM BatchEnrollment e WHERE e.student.id = :studentId AND e.isActive = true) " +

@@ -1,10 +1,12 @@
 package com.fmt.fmt_backend.entity;
 
 import com.fmt.fmt_backend.enums.MeetingStatus;
-import com.fmt.fmt_backend.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
+
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -20,9 +22,14 @@ public class Meeting extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "batch_id", nullable = false)
-    private Batch batch;
+    @Builder.Default
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "meeting_batches",
+        joinColumns = @JoinColumn(name = "meeting_id"),
+        inverseJoinColumns = @JoinColumn(name = "batch_id")
+    )
+    private Set<Batch> batches = new HashSet<>();
 
     /** Mentor conducting this class — any mentor can take any batch's class */
     @ManyToOne(fetch = FetchType.LAZY)

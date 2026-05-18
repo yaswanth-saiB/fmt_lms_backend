@@ -1,5 +1,6 @@
 package com.fmt.fmt_backend.service;
 
+import com.fmt.fmt_backend.dto.BatchSummaryResponse;
 import com.fmt.fmt_backend.dto.MeetingRequest;
 import com.fmt.fmt_backend.dto.MeetingResponse;
 import com.fmt.fmt_backend.dto.RescheduleMeetingRequest;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,13 +35,28 @@ public class MeetingService {
     private final ZoomService zoomService;
 
     /**
-     * Create a Zoom meeting for a batch.
-     * Any mentor can create a class for any batch.
-     * Validates that the time slot doesn't conflict with an existing class for the same batch.
+     * Create a Zoom meeting for one or more batches.
+     * All selected batches must belong to the same course.
+     * Validates time conflicts across all selected batches.
      */
+    @Transactional
     public MeetingResponse createMeeting(MeetingRequest request, UUID mentorId) {
-        Batch batch = batchRepository.findById(request.getBatchId())
-                .orElseThrow(() -> new RuntimeException("Batch not found"));
+        List<UUID> batchIds = request.getBatchIds();
+
+        List<Batch> batches = batchIds.stream()
+                .map(id -> batchRepository.findById(id)
+                        .orElseThrow(() -> new RuntimeException("Batch not found: " + id)))
+                .collect(Collectors.toList());
+
+        // All batches must belong to the same course
+        UUID courseId = batches.get(0).getCourse().getId();
+        for (Batch b : batches) {
+            if (!b.getCourse().getId().equals(courseId)) {
+                throw new RuntimeException(
+                    "All batches must belong to the same course. Batch \"" + b.getName() +
+                    "\" belongs to a different course.");
+            }
+        }
 
         User mentor = userRepository.findById(mentorId)
                 .orElseThrow(() -> new RuntimeException("Mentor not found"));
@@ -48,17 +65,19 @@ public class MeetingService {
         LocalDateTime newStart = request.getScheduledAt();
         LocalDateTime newEnd = newStart != null ? newStart.plusMinutes(duration) : null;
 
-        // Time conflict check — same batch cannot have overlapping classes
+        // Time conflict check across every selected batch
         if (newStart != null) {
-            List<Meeting> existing = meetingRepository.findActiveOrUpcomingByBatch(batch);
-            for (Meeting m : existing) {
-                if (m.getScheduledAt() == null) continue;
-                LocalDateTime existEnd = m.getScheduledAt().plusMinutes(m.getDurationMins());
-                boolean overlaps = m.getScheduledAt().isBefore(newEnd) && existEnd.isAfter(newStart);
-                if (overlaps) {
-                    throw new RuntimeException(
-                        "Time conflict: this batch already has a class scheduled from " +
-                        m.getScheduledAt() + " to " + existEnd + " (\"" + m.getTopic() + "\")");
+            for (Batch batch : batches) {
+                List<Meeting> existing = meetingRepository.findActiveOrUpcomingByBatch(batch);
+                for (Meeting m : existing) {
+                    if (m.getScheduledAt() == null) continue;
+                    LocalDateTime existEnd = m.getScheduledAt().plusMinutes(m.getDurationMins());
+                    boolean overlaps = m.getScheduledAt().isBefore(newEnd) && existEnd.isAfter(newStart);
+                    if (overlaps) {
+                        throw new RuntimeException(
+                            "Time conflict in batch \"" + batch.getName() + "\": already has a class from " +
+                            m.getScheduledAt() + " to " + existEnd + " (\"" + m.getTopic() + "\")");
+                    }
                 }
             }
         }
@@ -66,7 +85,7 @@ public class MeetingService {
         Map<String, String> zoomMeeting = zoomService.createMeeting(request.getTopic(), duration);
 
         Meeting meeting = Meeting.builder()
-                .batch(batch)
+                .batches(new HashSet<>(batches))
                 .mentor(mentor)
                 .zoomMeetingId(zoomMeeting.get("id"))
                 .topic(request.getTopic())
@@ -78,7 +97,7 @@ public class MeetingService {
                 .build();
 
         Meeting saved = meetingRepository.save(meeting);
-        log.info("Meeting created: id={}, batch={}, mentor={}, at={}", saved.getId(), batch.getId(), mentorId, newStart);
+        log.info("Meeting created: id={}, batches={}, mentor={}, at={}", saved.getId(), batchIds, mentorId, newStart);
         return toMentorResponse(saved);
     }
 
@@ -121,7 +140,6 @@ public class MeetingService {
 
     /**
      * Cancel an UPCOMING meeting (soft delete — sets CANCELLED).
-     * Cannot cancel a LIVE or already ENDED meeting.
      */
     @Transactional
     public void cancelMeeting(UUID meetingId, UUID mentorId) {
@@ -138,7 +156,7 @@ public class MeetingService {
 
     /**
      * Reschedule an UPCOMING meeting — update time, duration, and/or topic.
-     * Re-validates for time conflicts after rescheduling.
+     * Re-validates for time conflicts across all batches of the meeting.
      */
     @Transactional
     public MeetingResponse rescheduleMeeting(UUID meetingId, RescheduleMeetingRequest request, UUID mentorId) {
@@ -152,17 +170,19 @@ public class MeetingService {
         LocalDateTime newStart = request.getScheduledAt();
         LocalDateTime newEnd = newStart.plusMinutes(duration);
 
-        // Conflict check — exclude this meeting itself
-        List<Meeting> existing = meetingRepository.findActiveOrUpcomingByBatch(meeting.getBatch());
-        for (Meeting m : existing) {
-            if (m.getId().equals(meetingId)) continue; // skip self
-            if (m.getScheduledAt() == null) continue;
-            LocalDateTime existEnd = m.getScheduledAt().plusMinutes(m.getDurationMins());
-            boolean overlaps = m.getScheduledAt().isBefore(newEnd) && existEnd.isAfter(newStart);
-            if (overlaps) {
-                throw new RuntimeException(
-                    "Time conflict: this batch already has a class from " +
-                    m.getScheduledAt() + " to " + existEnd + " (\"" + m.getTopic() + "\")");
+        // Conflict check across all batches of this meeting, excluding this meeting itself
+        for (Batch batch : meeting.getBatches()) {
+            List<Meeting> existing = meetingRepository.findActiveOrUpcomingByBatch(batch);
+            for (Meeting m : existing) {
+                if (m.getId().equals(meetingId)) continue;
+                if (m.getScheduledAt() == null) continue;
+                LocalDateTime existEnd = m.getScheduledAt().plusMinutes(m.getDurationMins());
+                boolean overlaps = m.getScheduledAt().isBefore(newEnd) && existEnd.isAfter(newStart);
+                if (overlaps) {
+                    throw new RuntimeException(
+                        "Time conflict in batch \"" + batch.getName() + "\": already has a class from " +
+                        m.getScheduledAt() + " to " + existEnd + " (\"" + m.getTopic() + "\")");
+                }
             }
         }
 
@@ -197,7 +217,6 @@ public class MeetingService {
     public MeetingResponse adminEndMeeting(UUID meetingId) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new RuntimeException("Meeting not found"));
-        // Admin can force-end LIVE or UPCOMING (e.g. meeting stuck because webhook never fired)
         if (meeting.getStatus() != MeetingStatus.LIVE && meeting.getStatus() != MeetingStatus.UPCOMING) {
             throw new RuntimeException("Only LIVE or UPCOMING meetings can be ended. Current status: " + meeting.getStatus());
         }
@@ -230,15 +249,17 @@ public class MeetingService {
         LocalDateTime newStart = request.getScheduledAt();
         LocalDateTime newEnd = newStart.plusMinutes(duration);
 
-        List<Meeting> existing = meetingRepository.findActiveOrUpcomingByBatch(meeting.getBatch());
-        for (Meeting m : existing) {
-            if (m.getId().equals(meetingId)) continue;
-            if (m.getScheduledAt() == null) continue;
-            LocalDateTime existEnd = m.getScheduledAt().plusMinutes(m.getDurationMins());
-            if (m.getScheduledAt().isBefore(newEnd) && existEnd.isAfter(newStart)) {
-                throw new RuntimeException(
-                    "Time conflict: this batch already has a class from " +
-                    m.getScheduledAt() + " to " + existEnd + " (\"" + m.getTopic() + "\")");
+        for (Batch batch : meeting.getBatches()) {
+            List<Meeting> existing = meetingRepository.findActiveOrUpcomingByBatch(batch);
+            for (Meeting m : existing) {
+                if (m.getId().equals(meetingId)) continue;
+                if (m.getScheduledAt() == null) continue;
+                LocalDateTime existEnd = m.getScheduledAt().plusMinutes(m.getDurationMins());
+                if (m.getScheduledAt().isBefore(newEnd) && existEnd.isAfter(newStart)) {
+                    throw new RuntimeException(
+                        "Time conflict in batch \"" + batch.getName() + "\": already has a class from " +
+                        m.getScheduledAt() + " to " + existEnd + " (\"" + m.getTopic() + "\")");
+                }
             }
         }
 
@@ -257,8 +278,11 @@ public class MeetingService {
     public MeetingResponse getJoinUrlForStudent(UUID meetingId, UUID studentId) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new RuntimeException("Meeting not found"));
-        if (!batchService.isStudentEnrolled(meeting.getBatch().getId(), studentId)) {
-            throw new RuntimeException("You are not enrolled in this batch");
+        // Student must be enrolled in at least one of the meeting's batches
+        boolean enrolled = meeting.getBatches().stream()
+                .anyMatch(b -> batchService.isStudentEnrolled(b.getId(), studentId));
+        if (!enrolled) {
+            throw new RuntimeException("You are not enrolled in this class");
         }
         return toStudentResponse(meeting);
     }
@@ -287,7 +311,7 @@ public class MeetingService {
     public List<MeetingResponse> getBatchMeetingsForMentor(UUID batchId, UUID mentorId, List<MeetingStatus> statusFilter) {
         Batch batch = batchRepository.findById(batchId)
                 .orElseThrow(() -> new RuntimeException("Batch not found"));
-        return meetingRepository.findByBatchOrderByCreatedAtDesc(batch)
+        return meetingRepository.findByBatch(batch)
                 .stream()
                 .filter(m -> statusFilter == null || statusFilter.isEmpty() || statusFilter.contains(m.getStatus()))
                 .map(this::toMentorResponse)
@@ -304,7 +328,7 @@ public class MeetingService {
         }
         Batch batch = batchRepository.findById(batchId)
                 .orElseThrow(() -> new RuntimeException("Batch not found"));
-        return meetingRepository.findByBatchOrderByCreatedAtDesc(batch)
+        return meetingRepository.findByBatch(batch)
                 .stream()
                 .filter(m -> statusFilter == null || statusFilter.isEmpty() || statusFilter.contains(m.getStatus()))
                 .map(this::toStudentResponse)
@@ -336,8 +360,7 @@ public class MeetingService {
                 .id(m.getId())
                 .zoomMeetingId(m.getZoomMeetingId())
                 .topic(m.getTopic())
-                .batchId(m.getBatch().getId())
-                .batchName(m.getBatch().getName())
+                .batches(toBatchSummaries(m))
                 .mentorId(m.getMentor().getId())
                 .mentorName(m.getMentor().getFirstName() + " " + m.getMentor().getLastName())
                 .status(m.getStatus())
@@ -354,8 +377,7 @@ public class MeetingService {
         return MeetingResponse.builder()
                 .id(m.getId())
                 .topic(m.getTopic())
-                .batchId(m.getBatch().getId())
-                .batchName(m.getBatch().getName())
+                .batches(toBatchSummaries(m))
                 .mentorName(m.getMentor().getFirstName() + " " + m.getMentor().getLastName())
                 .status(m.getStatus())
                 .scheduledAt(m.getScheduledAt())
@@ -364,5 +386,11 @@ public class MeetingService {
                 .joinUrl(m.getJoinUrl())
                 // startUrl and mentorId intentionally omitted for students
                 .build();
+    }
+
+    private List<BatchSummaryResponse> toBatchSummaries(Meeting m) {
+        return m.getBatches().stream()
+                .map(b -> BatchSummaryResponse.builder().id(b.getId()).name(b.getName()).build())
+                .collect(Collectors.toList());
     }
 }

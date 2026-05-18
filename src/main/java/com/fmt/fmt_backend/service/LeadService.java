@@ -175,6 +175,7 @@ public class LeadService {
             log.info("📱 Lead {} now eligible for WhatsApp after 5 DNPs", id);
         }
 
+        autoAssignIfUnassigned(lead, currentUser);
         lead = leadRepository.save(lead);
         leadActivityRepository.save(activity(lead, ActivityType.CALL_ATTEMPTED,
                 "DNP " + newCount + " — called, no answer", currentUser));
@@ -197,6 +198,7 @@ public class LeadService {
 
         lead.setWhatsappSent(true);
         lead.setStatus(LeadStatus.WHATSAPP_SENT);
+        autoAssignIfUnassigned(lead, currentUser);
         lead = leadRepository.save(lead);
         leadActivityRepository.save(activity(lead, ActivityType.WHATSAPP_SENT,
                 "WhatsApp sent after 5 failed call attempts", currentUser));
@@ -266,6 +268,7 @@ public class LeadService {
             default -> { /* no extra fields */ }
         }
 
+        autoAssignIfUnassigned(lead, currentUser);
         lead = leadRepository.save(lead);
 
         String description = "Status changed from " + oldStatus + " to " + request.getStatus();
@@ -292,6 +295,7 @@ public class LeadService {
 
         Lead lead = opt.get();
         lead.setNotes(request.getNote());
+        autoAssignIfUnassigned(lead, currentUser);
         lead = leadRepository.save(lead);
         leadActivityRepository.save(activity(lead, ActivityType.NOTE_ADDED, "Note: " + request.getNote(), currentUser));
         return ApiResponse.success("Note added", buildFullResponse(lead));
@@ -394,6 +398,59 @@ public class LeadService {
                 "Payment of ₹" + payment.getAmount() + " marked as PAID", currentUser));
 
         return ApiResponse.success("Payment marked as paid", LeadPaymentResponse.from(payment));
+    }
+
+    @Transactional
+    public ApiResponse<LeadPaymentResponse> editPayment(UUID leadId, UUID paymentId,
+                                                         UpdateLeadPaymentRequest request, User currentUser) {
+        if (!leadRepository.existsById(leadId)) return ApiResponse.error("Lead not found");
+
+        Optional<LeadPayment> opt = leadPaymentRepository.findById(paymentId);
+        if (opt.isEmpty()) return ApiResponse.error("Payment not found");
+
+        LeadPayment payment = opt.get();
+        if (!payment.getLead().getId().equals(leadId)) return ApiResponse.error("Payment does not belong to this lead");
+
+        BigDecimal oldAmount = payment.getAmount();
+        PaymentType oldType = payment.getPaymentType();
+
+        payment.setAmount(request.getAmount());
+        payment.setPaymentType(request.getPaymentType());
+        payment.setDueDate(request.getDueDate());
+        if (request.getNotes() != null) payment.setNotes(request.getNotes());
+        payment = leadPaymentRepository.save(payment);
+
+        leadActivityRepository.save(activity(payment.getLead(), ActivityType.PAYMENT_RECORDED,
+                "Payment updated: ₹" + oldAmount + " (" + oldType + ") → ₹" + request.getAmount() + " (" + request.getPaymentType() + ")",
+                currentUser));
+
+        log.info("✏️ Payment {} updated by {} — ₹{} → ₹{}", paymentId, currentUser.getEmail(), oldAmount, request.getAmount());
+        return ApiResponse.success("Payment updated", LeadPaymentResponse.from(payment));
+    }
+
+    @Transactional
+    public ApiResponse<String> deletePayment(UUID leadId, UUID paymentId, User currentUser) {
+        if (!leadRepository.existsById(leadId)) return ApiResponse.error("Lead not found");
+
+        Optional<LeadPayment> opt = leadPaymentRepository.findById(paymentId);
+        if (opt.isEmpty()) return ApiResponse.error("Payment not found");
+
+        LeadPayment payment = opt.get();
+        if (!payment.getLead().getId().equals(leadId)) return ApiResponse.error("Payment does not belong to this lead");
+
+        Lead lead = payment.getLead();
+        BigDecimal amount = payment.getAmount();
+        PaymentType type = payment.getPaymentType();
+        PaymentStatus status = payment.getStatus();
+
+        leadPaymentRepository.delete(payment);
+
+        leadActivityRepository.save(activity(lead, ActivityType.PAYMENT_RECORDED,
+                "Payment of ₹" + amount + " (" + type + ", " + status + ") deleted",
+                currentUser));
+
+        log.info("🗑️ Payment {} deleted by {} — ₹{} {}", paymentId, currentUser.getEmail(), amount, type);
+        return ApiResponse.success("Payment deleted", "deleted");
     }
 
     // ─────────────────────────────────────────────
@@ -519,6 +576,13 @@ public class LeadService {
     // ─────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────
+
+    private void autoAssignIfUnassigned(Lead lead, User currentUser) {
+        if (lead.getAssignedTo() == null && currentUser.getUserRole() == UserRole.SALES) {
+            lead.setAssignedTo(currentUser);
+            log.info("🤝 Lead {} auto-assigned to SALES user {}", lead.getId(), currentUser.getEmail());
+        }
+    }
 
     private LeadResponse buildFullResponse(Lead lead) {
         List<LeadActivityResponse> activities = leadActivityRepository
