@@ -154,6 +154,7 @@ public class ZoomService {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(getAccessToken());
+        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
 
         ResponseEntity<Map> response = restTemplate.exchange(
                 ZOOM_API_BASE + "/meetings/" + zoomMeetingId + "/recordings",

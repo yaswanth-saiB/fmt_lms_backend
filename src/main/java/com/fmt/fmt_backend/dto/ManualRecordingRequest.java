@@ -3,6 +3,7 @@ package com.fmt.fmt_backend.dto;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -15,15 +16,15 @@ import java.util.UUID;
  * Lookup priority:
  *   1. meetingId (our DB UUID) — most precise, use if admin can find it in the meetings list
  *   2. zoomMeetingId only — backend looks up meeting in our DB by zoom meeting ID
- *   3. zoomMeetingId + batchId — meeting was not in our DB (class run fully outside app);
- *      backend creates a placeholder meeting record linked to the given batch
+ *   3. zoomMeetingId + batchIds — meeting was not in our DB (class run fully outside app);
+ *      backend creates a placeholder meeting record linked to the given batches
  */
 @Data
 public class ManualRecordingRequest {
 
     /**
-     * The Zoom meeting ID — the numeric string visible in Zoom dashboard
-     * (e.g. "87654321234"). Used to call the Zoom API to fetch the recording.
+     * The Zoom meeting ID — the numeric string visible in Zoom dashboard.
+     * Spaces and hyphens are stripped automatically (e.g. "831 0985 0102" → "83109850102").
      * REQUIRED.
      */
     @NotBlank(message = "zoomMeetingId is required — find it in your Zoom dashboard or cloud recordings page")
@@ -36,11 +37,13 @@ public class ManualRecordingRequest {
     private UUID meetingId;
 
     /**
-     * Our internal batch UUID. Required ONLY if the meeting is not in our DB
+     * Our internal batch UUIDs. Required ONLY if the meeting is not in our DB
      * (class was run directly from Zoom without going through the app).
-     * A placeholder meeting record will be created and linked to this batch.
+     * A placeholder meeting record will be created linked to all specified batches,
+     * and one recording row is created per batch.
+     * All batches should belong to the same course.
      */
-    private UUID batchId;
+    private List<UUID> batchIds;
 
     /** Optional — overrides the title stored in the meeting record. */
     private String title;

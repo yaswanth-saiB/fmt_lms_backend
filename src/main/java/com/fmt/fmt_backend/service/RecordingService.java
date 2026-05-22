@@ -183,7 +183,8 @@ public class RecordingService {
      */
     @Transactional
     public RecordingResponse createManualRecording(ManualRecordingRequest request) {
-        String zoomMeetingId = request.getZoomMeetingId().trim();
+        // Strip spaces and hyphens — Zoom displays IDs as "831 0985 0102" but the API needs "83109850102"
+        String zoomMeetingId = request.getZoomMeetingId().replaceAll("[\\s\\-]", "");
 
         // Step 1 — resolve Meeting record
         Meeting meeting = null;
@@ -198,30 +199,32 @@ public class RecordingService {
         }
         if (meeting == null) {
             // Class was run fully outside the app — create a placeholder meeting
-            if (request.getBatchId() == null) {
+            if (request.getBatchIds() == null || request.getBatchIds().isEmpty()) {
                 throw new ResponseStatusException(
                         org.springframework.http.HttpStatus.NOT_FOUND,
                         "No meeting found for Zoom meeting ID '" + zoomMeetingId
                         + "' in our system. If this class was run directly from Zoom (not through the app), "
-                        + "provide batchId so a placeholder meeting can be created.");
+                        + "provide batchIds so a placeholder meeting can be created.");
             }
-            Batch batch = batchRepository.findById(request.getBatchId())
-                    .orElseThrow(() -> new ResponseStatusException(
-                            org.springframework.http.HttpStatus.NOT_FOUND, "Batch not found"));
+            java.util.Set<Batch> placeholderBatches = new java.util.HashSet<>();
+            for (UUID batchId : request.getBatchIds()) {
+                placeholderBatches.add(batchRepository.findById(batchId)
+                        .orElseThrow(() -> new ResponseStatusException(
+                                org.springframework.http.HttpStatus.NOT_FOUND, "Batch not found: " + batchId)));
+            }
+            Batch firstBatch = placeholderBatches.iterator().next();
             String placeholderTitle = request.getTitle() != null
                     ? request.getTitle() : "Manual Recording — Zoom " + zoomMeetingId;
-            java.util.Set<Batch> placeholderBatches = new java.util.HashSet<>();
-            placeholderBatches.add(batch);
             meeting = Meeting.builder()
                     .batches(placeholderBatches)
-                    .mentor(batch.getCourse().getMentor())
+                    .mentor(firstBatch.getCourse().getMentor())
                     .zoomMeetingId(zoomMeetingId)
                     .topic(placeholderTitle)
                     .status(MeetingStatus.ENDED)
                     .durationMins(request.getDurationMins() != null ? request.getDurationMins() : 120)
                     .build();
             meeting = meetingRepository.save(meeting);
-            log.info("Created placeholder meeting record for Zoom meeting {} in batch {}", zoomMeetingId, request.getBatchId());
+            log.info("Created placeholder meeting for Zoom meeting {} across {} batch(es)", zoomMeetingId, placeholderBatches.size());
         }
 
         // Step 2 — idempotency: don't create a second recording for the same meeting
@@ -657,7 +660,12 @@ public class RecordingService {
             restTemplate.execute(
                     zoomDownloadUrl,
                     HttpMethod.GET,
-                    request -> request.getHeaders().set("Accept", "application/octet-stream"),
+                    request -> {
+                        request.getHeaders().set("Accept", "application/octet-stream");
+                        // Always include Bearer auth — required when download_token is absent
+                        // (Server-to-Server OAuth supports both ?access_token= and Bearer header)
+                        request.getHeaders().setBearerAuth(zoomService.getAccessToken());
+                    },
                     response -> {
                         Files.copy(response.getBody(), tempFile, StandardCopyOption.REPLACE_EXISTING);
                         return null;
@@ -958,23 +966,29 @@ public class RecordingService {
 
     @org.springframework.transaction.annotation.Transactional
     public RecordingResponse adminRegisterExternalRecording(RegisterExternalRecordingRequest request) {
-        Batch batch = batchRepository.findById(request.getBatchId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        org.springframework.http.HttpStatus.NOT_FOUND, "Batch not found"));
+        List<Batch> batches = request.getBatchIds().stream()
+                .map(id -> batchRepository.findById(id)
+                        .orElseThrow(() -> new ResponseStatusException(
+                                org.springframework.http.HttpStatus.NOT_FOUND, "Batch not found: " + id)))
+                .collect(java.util.stream.Collectors.toList());
 
-        Recording recording = Recording.builder()
-                .meeting(null)
-                .batch(batch)
-                .title(request.getTitle())
-                .bunnyVideoId(request.getBunnyVideoId())
-                .durationMins(request.getDurationMins())
-                .status(com.fmt.fmt_backend.enums.RecordingStatus.AVAILABLE)
-                .build();
+        Recording primary = null;
+        for (Batch batch : batches) {
+            Recording recording = Recording.builder()
+                    .meeting(null)
+                    .batch(batch)
+                    .title(request.getTitle())
+                    .bunnyVideoId(request.getBunnyVideoId())
+                    .durationMins(request.getDurationMins())
+                    .status(com.fmt.fmt_backend.enums.RecordingStatus.AVAILABLE)
+                    .build();
+            recording = recordingRepository.save(recording);
+            if (primary == null) primary = recording;
+        }
 
-        recording = recordingRepository.save(recording);
-        log.info("External recording registered — batch: {}, bunnyVideoId: {}, title: {}",
-                request.getBatchId(), request.getBunnyVideoId(), request.getTitle());
-        return toMentorRecordingResponse(recording);
+        log.info("External recording registered — {} batch(es), bunnyVideoId: {}, title: {}",
+                batches.size(), request.getBunnyVideoId(), request.getTitle());
+        return toMentorRecordingResponse(primary);
     }
 
     // =========================================================================

@@ -95,13 +95,20 @@ public class BatchService {
             throw new RuntimeException("Batch is full");
         }
 
-        BatchEnrollment enrollment = BatchEnrollment.builder()
-                .batch(batch)
-                .student(student)
-                .build();
-
-        enrollmentRepository.save(enrollment);
-        log.info("Student {} enrolled in batch {}", student.getId(), batch.getId());
+        // If an inactive row already exists (student was previously unenrolled),
+        // reactivate it — avoids the unique constraint on (batch_id, student_id).
+        enrollmentRepository.findByBatchAndStudent(batch, student).ifPresentOrElse(
+            existing -> {
+                existing.setIsActive(true);
+                existing.setEnrolledAt(java.time.LocalDateTime.now());
+                enrollmentRepository.save(existing);
+                log.info("Student {} re-enrolled in batch {} (reactivated)", student.getId(), batch.getId());
+            },
+            () -> {
+                enrollmentRepository.save(BatchEnrollment.builder().batch(batch).student(student).build());
+                log.info("Student {} enrolled in batch {} (new)", student.getId(), batch.getId());
+            }
+        );
     }
 
     public List<BatchResponse> getStudentEnrolledBatches(UUID studentId) {
