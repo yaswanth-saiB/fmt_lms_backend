@@ -145,7 +145,7 @@ resend:
 # JWT CONFIGURATION
 # ============================================
 jwt:
-  secret: ${JWT_SECRET}
+  secret: ${JWT_SECRET:dGVzdC1zZWNyZXQta2V5LWZvci1sb2NhbC1kZXYtb25seS0xMjM=}
   access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:21600000}
   refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:1209600000}
 
@@ -218,20 +218,34 @@ springdoc:
 # ZOOM CONFIGURATION (Server-to-Server OAuth)
 # ============================================
 zoom:
-  account-id: ${ZOOM_ACCOUNT_ID}
-  client-id: ${ZOOM_CLIENT_ID}
-  client-secret: ${ZOOM_CLIENT_SECRET}
-  webhook-secret: ${ZOOM_WEBHOOK_SECRET}  # from Zoom Marketplace → Event Subscriptions → Secret Token
+  account-id: ${ZOOM_ACCOUNT_ID:}
+  client-id: ${ZOOM_CLIENT_ID:}
+  client-secret: ${ZOOM_CLIENT_SECRET:}
+  webhook-secret: ${ZOOM_WEBHOOK_SECRET:}
 
 # ============================================
 # BUNNY.NET STREAM CONFIGURATION
 # ============================================
 bunny:
   library-id: ${BUNNY_LIBRARY_ID:635843}
-  api-key: ${BUNNY_API_KEY}
-  cdn-hostname: ${BUNNY_CDN_HOSTNAME}          # e.g. vz-xxxxxxxx.b-cdn.net
-  token-key: ${BUNNY_TOKEN_KEY}                 # CDN Zone → Token Authentication
+  api-key: ${BUNNY_API_KEY:}
+  cdn-hostname: ${BUNNY_CDN_HOSTNAME:}
+  token-key: ${BUNNY_TOKEN_KEY:}
   # No webhook secret — Bunny sends no auth header. Validation uses library-id from payload.
+
+# ============================================
+# WHATSAPP BUSINESS API (Meta)
+# ============================================
+whatsapp:
+  access-token: ${WHATSAPP_ACCESS_TOKEN:}
+  phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:1105422512657572}
+  webhook-verify-token: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:fmt_whatsapp_webhook_2026}
+  waba-id: ${WHATSAPP_WABA_ID:}
+
+meta:
+  app-secret: ${META_APP_SECRET:}
+  page-id: ${META_PAGE_ID:}
+  leads-verify-token: ${META_LEADS_VERIFY_TOKEN:fmt_leads_webhook_2026}
 
 # ============================================
 # GOOGLE SHEETS — CRM Lead Sync

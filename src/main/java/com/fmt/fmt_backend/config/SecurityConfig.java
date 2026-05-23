@@ -84,9 +84,10 @@ public class SecurityConfig {
                         // Testing
                         .requestMatchers("/api/test/**").permitAll()
                         .requestMatchers("/api/public/**").permitAll()
-                        // Webhooks — called by Zoom and Bunny, no auth token
+                        // Webhooks — called by Zoom, Bunny, and Meta (WhatsApp/Lead Gen)
                         .requestMatchers("/api/webhook/zoom").permitAll()
                         .requestMatchers("/api/webhook/bunny").permitAll()
+                        .requestMatchers("/api/webhook/whatsapp").permitAll()
 
                         // Protected — require valid access token
                         .requestMatchers("/api/auth/logout").authenticated()
@@ -103,6 +104,10 @@ public class SecurityConfig {
                         // Lead Management CRM — ADMIN or SALES
                         // assign endpoint is ADMIN-only, enforced inside LeadService
                         .requestMatchers("/api/sales/**").hasAnyRole("ADMIN", "SALES")
+                        // WhatsApp Inbox — ADMIN or SALES
+                        .requestMatchers("/api/inbox/**").hasAnyRole("ADMIN", "SALES")
+                        // Chatbot admin — ADMIN only
+                        .requestMatchers("/api/admin/chatbot/**").hasRole("ADMIN")
 
                         .anyRequest().authenticated()
                 )
