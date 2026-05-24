@@ -5,6 +5,7 @@ import com.fmt.fmt_backend.dto.ChatbotResponseDto;
 import com.fmt.fmt_backend.dto.ChatbotResponseRequest;
 import com.fmt.fmt_backend.entity.ChatbotResponse;
 import com.fmt.fmt_backend.repository.ChatbotResponseRepository;
+import com.fmt.fmt_backend.service.ChatbotGlobalSettings;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -25,6 +27,23 @@ import java.util.stream.Collectors;
 public class ChatbotAdminController {
 
     private final ChatbotResponseRepository chatbotResponseRepository;
+    private final ChatbotGlobalSettings chatbotGlobalSettings;
+
+    @GetMapping("/global-status")
+    @Operation(summary = "Get global chatbot on/off status")
+    public ResponseEntity<ApiResponse<Map<String, Boolean>>> getGlobalStatus() {
+        return ResponseEntity.ok(ApiResponse.success("Global status fetched",
+                Map.of("enabled", chatbotGlobalSettings.isEnabled())));
+    }
+
+    @PutMapping("/global-status")
+    @Operation(summary = "Toggle global chatbot on/off")
+    public ResponseEntity<ApiResponse<Map<String, Boolean>>> toggleGlobalStatus() {
+        boolean newState = chatbotGlobalSettings.toggle();
+        return ResponseEntity.ok(ApiResponse.success(
+                "Chatbot globally " + (newState ? "enabled" : "disabled"),
+                Map.of("enabled", newState)));
+    }
 
     @GetMapping("/responses")
     @Operation(summary = "List all chatbot responses")

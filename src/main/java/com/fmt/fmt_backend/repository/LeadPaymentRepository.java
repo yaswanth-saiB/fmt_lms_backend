@@ -14,6 +14,8 @@ public interface LeadPaymentRepository extends JpaRepository<LeadPayment, UUID> 
 
     List<LeadPayment> findByLeadIdOrderByCreatedAtAsc(UUID leadId);
 
+    void deleteByLeadId(UUID leadId);
+
     @Query("SELECT COALESCE(SUM(lp.amount), 0) FROM LeadPayment lp " +
            "WHERE lp.lead.id = :leadId AND lp.status = :status")
     BigDecimal sumAmountByLeadIdAndStatus(

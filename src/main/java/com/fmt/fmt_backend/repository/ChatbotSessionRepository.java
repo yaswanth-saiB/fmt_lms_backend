@@ -10,4 +10,6 @@ import java.util.UUID;
 public interface ChatbotSessionRepository extends JpaRepository<ChatbotSession, UUID> {
 
     Optional<ChatbotSession> findByConversation(WhatsappConversation conversation);
+
+    void deleteByConversation(WhatsappConversation conversation);
 }

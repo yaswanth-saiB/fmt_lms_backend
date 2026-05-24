@@ -179,7 +179,8 @@ public class WhatsAppApiService {
                 new HttpEntity<>(headers),
                 Map.class);
 
-        Map<?, ?> meta = metaResp.getBody();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> meta = (Map<String, Object>) metaResp.getBody();
         String url = meta != null ? (String) meta.get("url") : null;
         String mimeType = meta != null ? (String) meta.getOrDefault("mime_type", "application/octet-stream") : "application/octet-stream";
 

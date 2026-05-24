@@ -186,11 +186,11 @@ public class CampaignService {
     @Transactional
     public void deleteCampaign(UUID campaignId) {
         WhatsappCampaign campaign = findCampaign(campaignId);
-        if (campaign.getStatus() != CampaignStatus.DRAFT) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Only DRAFT campaigns can be deleted");
-        }
+        // Delete recipients first (FK constraint), then the campaign
+        List<WhatsappCampaignRecipient> recipients = recipientRepository.findByCampaignOrderBySentAtDesc(campaign);
+        recipientRepository.deleteAll(recipients);
         campaignRepository.delete(campaign);
+        log.info("Campaign {} ({}) deleted", campaign.getName(), campaignId);
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────────

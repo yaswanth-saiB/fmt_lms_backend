@@ -9,4 +9,6 @@ import java.util.UUID;
 
 public interface WhatsappCampaignRecipientRepository extends JpaRepository<WhatsappCampaignRecipient, UUID> {
     List<WhatsappCampaignRecipient> findByCampaignOrderBySentAtDesc(WhatsappCampaign campaign);
+
+    void deleteByLead(com.fmt.fmt_backend.entity.Lead lead);
 }

@@ -101,6 +101,13 @@ public class InboxController {
         return ResponseEntity.ok(ApiResponse.success("Bot toggled", active));
     }
 
+    @DeleteMapping("/conversations/{id}/messages")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Clear all messages in a conversation and reset bot state (ADMIN only)")
+    public ResponseEntity<ApiResponse<Void>> clearMessages(@PathVariable UUID id) {
+        inboxService.clearConversationMessages(id);
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
     @GetMapping("/unread-count")
     public ResponseEntity<ApiResponse<UnreadCountResponse>> getUnreadCount(
             @AuthenticationPrincipal UserDetails userDetails) {
@@ -134,7 +141,7 @@ public class InboxController {
 
     @GetMapping("/quick-replies")
     public ResponseEntity<ApiResponse<List<QuickReplyResponse>>> getQuickReplies() {
-        return ResponseEntity.ok(ApiResponse.success(inboxService.getQuickReplies()));
+        return ResponseEntity.ok(ApiResponse.success("Quick replies fetched", inboxService.getQuickReplies()));
     }
 
     @PostMapping("/quick-replies")
@@ -152,12 +159,25 @@ public class InboxController {
         return ResponseEntity.ok(ApiResponse.success(null));
     }
 
+    // ── Direct send to a lead by phone (from CRM lead page) ─────────────────────
+
+    @PostMapping("/direct-send")
+    @Operation(summary = "Send a WhatsApp message or template directly to a phone number")
+    public ResponseEntity<ApiResponse<Void>> directSend(
+            @Valid @RequestBody com.fmt.fmt_backend.dto.DirectSendRequest req,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        UUID userId = resolveUserId(userDetails);
+        inboxService.directSend(req.getPhone(), req.getType(), req.getMessage(),
+                req.getTemplateName(), req.getParams(), userId);
+        return ResponseEntity.ok(ApiResponse.success("Message sent", null));
+    }
+
     // ── Templates ───────────────────────────────────────────────────────────────
 
     @GetMapping("/templates")
     @Operation(summary = "List approved WhatsApp templates from Meta")
     public ResponseEntity<ApiResponse<List<com.fmt.fmt_backend.dto.WhatsappTemplateDto>>> getTemplates() {
-        return ResponseEntity.ok(ApiResponse.success(whatsAppApiService.getApprovedTemplates()));
+        return ResponseEntity.ok(ApiResponse.success("Templates fetched", whatsAppApiService.getApprovedTemplates()));
     }
 
     // ── Media proxy ─────────────────────────────────────────────────────────────

@@ -98,9 +98,17 @@ public class WhatsappWebhookController {
                     continue;
                 }
 
+                // Extract WhatsApp display name from contacts[0].profile.name
+                String contactName = null;
+                JsonNode contacts = value.path("contacts");
+                if (contacts.isArray() && contacts.size() > 0) {
+                    String n = contacts.get(0).path("profile").path("name").asText(null);
+                    if (n != null && !n.isBlank()) contactName = n.trim();
+                }
+
                 // Messages and statuses are under value.messages / value.statuses
                 for (JsonNode message : value.path("messages")) {
-                    handleIncomingMessage(message);
+                    handleIncomingMessage(message, contactName);
                 }
                 for (JsonNode status : value.path("statuses")) {
                     handleStatusUpdate(status);
@@ -109,7 +117,7 @@ public class WhatsappWebhookController {
         }
     }
 
-    private void handleIncomingMessage(JsonNode message) {
+    private void handleIncomingMessage(JsonNode message, String contactName) {
         try {
             String from          = message.path("from").asText();
             String type          = message.path("type").asText();
@@ -168,7 +176,7 @@ public class WhatsappWebhookController {
 
             log.info("Incoming WhatsApp message: from={} type={}", from, type);
             conversationService.handleIncomingMessage(from, type, content, buttonId, buttonTitle,
-                    mediaId, whatsappMsgId, timestamp > 0 ? timestamp : null);
+                    mediaId, whatsappMsgId, timestamp > 0 ? timestamp : null, contactName);
 
         } catch (Exception e) {
             log.error("Error handling incoming message: {}", e.getMessage(), e);

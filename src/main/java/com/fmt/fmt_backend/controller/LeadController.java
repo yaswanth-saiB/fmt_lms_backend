@@ -99,6 +99,14 @@ public class LeadController {
     // Single lead detail
     // ─────────────────────────────────────────────
 
+    @DeleteMapping("/leads/{id}")
+    @Operation(summary = "Delete a lead and all associated data (ADMIN only)", description = "Cascades: conversation, messages, notes, campaign recipients, activities, payments")
+    public ResponseEntity<ApiResponse<String>> deleteLead(@PathVariable UUID id) {
+        User user = requireCurrentUser();
+        ApiResponse<String> response = leadService.deleteLead(id, user);
+        return ResponseEntity.status(response.isSuccess() ? 200 : 403).body(response);
+    }
+
     @GetMapping("/leads/{id}")
     @Operation(summary = "Get full lead detail with activity history", description = "Role: ADMIN or SALES")
     public ResponseEntity<ApiResponse<LeadResponse>> getLeadById(@PathVariable UUID id) {

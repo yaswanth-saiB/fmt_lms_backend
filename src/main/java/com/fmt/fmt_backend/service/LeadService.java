@@ -1,10 +1,7 @@
 package com.fmt.fmt_backend.service;
 
 import com.fmt.fmt_backend.dto.*;
-import com.fmt.fmt_backend.entity.Lead;
-import com.fmt.fmt_backend.entity.LeadActivity;
-import com.fmt.fmt_backend.entity.LeadPayment;
-import com.fmt.fmt_backend.entity.User;
+import com.fmt.fmt_backend.entity.*;
 import com.fmt.fmt_backend.enums.*;
 import com.fmt.fmt_backend.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +34,11 @@ public class LeadService {
     private final ExcelImportService excelImportService;
     private final SheetSyncService sheetSyncService;
     private final SheetSyncLogRepository sheetSyncLogRepository;
+    private final WhatsappConversationRepository whatsappConversationRepository;
+    private final WhatsappMessageRepository whatsappMessageRepository;
+    private final ConversationNoteRepository conversationNoteRepository;
+    private final ChatbotSessionRepository chatbotSessionRepository;
+    private final WhatsappCampaignRecipientRepository whatsappCampaignRecipientRepository;
 
     // Terminal statuses — excluded from aging/stale/active counts
     private static final List<LeadStatus> TERMINAL_STATUSES = List.of(
@@ -606,6 +608,37 @@ public class LeadService {
                 .description(description)
                 .createdBy(user)
                 .build();
+    }
+
+    // ─────────────────────────────────────────────
+    // Delete lead (ADMIN only)
+    // ─────────────────────────────────────────────
+
+    @Transactional
+    public ApiResponse<String> deleteLead(UUID leadId, User requestingUser) {
+        if (requestingUser.getUserRole() != UserRole.ADMIN) {
+            return ApiResponse.error("Only ADMIN can delete leads");
+        }
+        Lead lead = leadRepository.findById(leadId).orElse(null);
+        if (lead == null) {
+            return ApiResponse.error("Lead not found");
+        }
+
+        // Cascade: conversations (messages, notes, chatbot sessions) → campaign recipients → activities → payments → lead
+        List<WhatsappConversation> conversations = whatsappConversationRepository.findByLead(lead);
+        for (WhatsappConversation conv : conversations) {
+            whatsappMessageRepository.deleteByConversation(conv);
+            conversationNoteRepository.deleteByConversation(conv);
+            chatbotSessionRepository.deleteByConversation(conv);
+        }
+        whatsappConversationRepository.deleteAll(conversations);
+        whatsappCampaignRecipientRepository.deleteByLead(lead);
+        leadActivityRepository.deleteByLeadId(leadId);
+        leadPaymentRepository.deleteByLeadId(leadId);
+        leadRepository.delete(lead);
+
+        log.info("Lead {} deleted by admin {}", leadId, requestingUser.getEmail());
+        return ApiResponse.success("Lead deleted", "ok");
     }
 
     private LeadStatus parseStatus(String status) {

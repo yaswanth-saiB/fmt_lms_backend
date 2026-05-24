@@ -29,26 +29,26 @@ public class CampaignController {
             @RequestBody CampaignRequest req,
             @AuthenticationPrincipal UserDetails principal) {
         UUID userId = extractUserId(principal);
-        return ResponseEntity.ok(ApiResponse.success(campaignService.createCampaign(req, userId)));
+        return ResponseEntity.ok(ApiResponse.success("Campaign created", campaignService.createCampaign(req, userId)));
     }
 
     @GetMapping
     @Operation(summary = "List all campaigns")
     public ResponseEntity<ApiResponse<List<CampaignSummaryResponse>>> list() {
-        return ResponseEntity.ok(ApiResponse.success(campaignService.getCampaigns()));
+        return ResponseEntity.ok(ApiResponse.success("Campaigns fetched", campaignService.getCampaigns()));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "Campaign detail with recipients")
     public ResponseEntity<ApiResponse<CampaignDetailResponse>> detail(@PathVariable UUID id) {
-        return ResponseEntity.ok(ApiResponse.success(campaignService.getCampaignDetail(id)));
+        return ResponseEntity.ok(ApiResponse.success("Campaign fetched", campaignService.getCampaignDetail(id)));
     }
 
     @PostMapping("/preview")
     @Operation(summary = "Preview how many leads match the filter before sending")
     public ResponseEntity<ApiResponse<CampaignPreviewResponse>> preview(
             @RequestBody CampaignRequest req) {
-        return ResponseEntity.ok(ApiResponse.success(campaignService.previewCampaign(req)));
+        return ResponseEntity.ok(ApiResponse.success("Preview ready", campaignService.previewCampaign(req)));
     }
 
     @PostMapping("/{id}/send")
@@ -57,14 +57,14 @@ public class CampaignController {
             @PathVariable UUID id,
             @AuthenticationPrincipal UserDetails principal) {
         UUID userId = extractUserId(principal);
-        return ResponseEntity.ok(ApiResponse.success(campaignService.sendCampaign(id, userId)));
+        return ResponseEntity.ok(ApiResponse.success("Campaign sent", campaignService.sendCampaign(id, userId)));
     }
 
     @DeleteMapping("/{id}")
     @Operation(summary = "Delete a DRAFT campaign")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         campaignService.deleteCampaign(id);
-        return ResponseEntity.ok(ApiResponse.success(null));
+        return ResponseEntity.ok(ApiResponse.success("Campaign deleted"));
     }
 
     private UUID extractUserId(UserDetails principal) {

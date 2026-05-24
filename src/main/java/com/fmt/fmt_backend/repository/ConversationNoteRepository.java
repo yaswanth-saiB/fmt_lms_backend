@@ -9,4 +9,6 @@ import java.util.UUID;
 
 public interface ConversationNoteRepository extends JpaRepository<ConversationNote, UUID> {
     List<ConversationNote> findByConversationOrderByCreatedAtDesc(WhatsappConversation conversation);
+
+    void deleteByConversation(WhatsappConversation conversation);
 }

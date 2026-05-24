@@ -70,4 +70,8 @@ public class WhatsappConversation extends BaseEntity {
     @Column(name = "entry_point", length = 30)
     @Builder.Default
     private ConversationEntryPoint entryPoint = ConversationEntryPoint.INBOUND;
+
+    // JSON blob for mid-flow chatbot state (demo date/mode/time, unknown count, etc.)
+    @Column(name = "saved_data", columnDefinition = "TEXT")
+    private String savedData;
 }

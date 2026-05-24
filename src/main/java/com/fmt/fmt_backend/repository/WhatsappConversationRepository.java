@@ -16,6 +16,8 @@ public interface WhatsappConversationRepository extends JpaRepository<WhatsappCo
 
     Optional<WhatsappConversation> findByPhone(String phone);
 
+    java.util.List<WhatsappConversation> findByLead(com.fmt.fmt_backend.entity.Lead lead);
+
     @Query(value = """
         SELECT c FROM WhatsappConversation c
         LEFT JOIN c.lead l

@@ -355,6 +355,91 @@ public class InboxService {
                 .build();
     }
 
+    // ── Direct send to lead (from lead page) ──────────────────────────────────
+
+    @Transactional
+    public void directSend(String phone, String type, String message,
+                            String templateName, List<String> params, UUID sentByUserId) {
+        String waPhone = normalizeToWaPhone(phone);
+
+        WhatsappConversation conv = conversationRepository.findByPhone(waPhone).orElseGet(() ->
+                conversationRepository.save(WhatsappConversation.builder()
+                        .phone(waPhone)
+                        .entryPoint(ConversationEntryPoint.OUTBOUND)
+                        .chatbotActive(false)
+                        .build()));
+
+        User sentBy = userRepository.findById(sentByUserId).orElse(null);
+        String waId;
+        String displayText;
+        WaMessageType msgType;
+
+        if ("TEMPLATE".equals(type)) {
+            waId = whatsAppApiService.sendTemplateMessage(waPhone, templateName, params);
+            displayText = "Template: " + templateName;
+            msgType = WaMessageType.TEMPLATE;
+        } else {
+            waId = whatsAppApiService.sendTextMessage(waPhone, message);
+            displayText = message;
+            msgType = WaMessageType.TEXT;
+        }
+
+        messageRepository.save(WhatsappMessage.builder()
+                .conversation(conv)
+                .whatsappMessageId(waId)
+                .direction(MessageDirection.OUTBOUND)
+                .messageType(msgType)
+                .content(displayText)
+                .isBotMessage(false)
+                .status(WaMessageStatus.SENT)
+                .sentBy(sentBy)
+                .sentAt(LocalDateTime.now())
+                .build());
+
+        conv.setLastMessage(displayText.length() > 100 ? displayText.substring(0, 100) : displayText);
+        conv.setLastMessageAt(LocalDateTime.now());
+        conv.setWindowExpiresAt(LocalDateTime.now().plusHours(24));
+        conversationRepository.save(conv);
+
+        if (conv.getLead() != null) {
+            leadActivityRepository.save(LeadActivity.builder()
+                    .lead(conv.getLead())
+                    .activityType("TEMPLATE".equals(type)
+                            ? ActivityType.WHATSAPP_CAMPAIGN : ActivityType.WHATSAPP_OUTBOUND)
+                    .description("TEMPLATE".equals(type)
+                            ? "Template sent: " + templateName : "Direct message: " + displayText)
+                    .createdBy(sentBy)
+                    .build());
+        }
+
+        log.info("Direct WhatsApp send: phone={} type={}", waPhone, type);
+    }
+
+    private String normalizeToWaPhone(String phone) {
+        if (phone == null) return null;
+        phone = phone.replaceAll("[\\s\\-\\(\\)\\+]", "");
+        if (phone.length() == 10) return "91" + phone;
+        return phone;
+    }
+
+    // ── Clear conversation messages ─────────────────────────────────────────────
+
+    @Transactional
+    public void clearConversationMessages(UUID conversationId) {
+        WhatsappConversation conv = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found"));
+        messageRepository.deleteByConversation(conv);
+        conv.setLastMessage(null);
+        conv.setLastMessageAt(null);
+        conv.setUnreadCount(0);
+        conv.setChatbotState(com.fmt.fmt_backend.enums.ChatbotState.INITIAL);
+        conv.setChatbotActive(true);
+        conv.setSavedData(null);
+        conv.setStatus(ConversationStatus.OPEN);
+        conversationRepository.save(conv);
+        log.info("Cleared all messages for conversation {}", conversationId);
+    }
+
     private Long minutesLeft(LocalDateTime windowExpiresAt) {
         if (windowExpiresAt == null) return null;
         long mins = ChronoUnit.MINUTES.between(LocalDateTime.now(), windowExpiresAt);

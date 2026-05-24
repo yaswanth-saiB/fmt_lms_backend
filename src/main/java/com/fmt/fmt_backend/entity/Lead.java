@@ -126,4 +126,17 @@ public class Lead extends BaseEntity {
     // Agreed course fee at closing stage
     @Column(name = "course_fee", precision = 10, scale = 2)
     private BigDecimal courseFee;
+
+    // Demo booking captured via chatbot flow
+    @Column(name = "chatbot_demo_date", columnDefinition = "TEXT")
+    private String chatbotDemoDate;
+
+    @Column(name = "chatbot_demo_mode", length = 20)
+    private String chatbotDemoMode;
+
+    @Column(name = "chatbot_demo_time", length = 20)
+    private String chatbotDemoTime;
+
+    @Column(name = "chatbot_demo_booked_at")
+    private LocalDateTime chatbotDemoBookedAt;
 }
