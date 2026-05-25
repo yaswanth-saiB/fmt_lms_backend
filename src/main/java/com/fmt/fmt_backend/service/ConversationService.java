@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -37,8 +38,8 @@ public class ConversationService {
             LeadStatus.PAYMENT_DONE
     );
 
-    // Bot cooldown: avoid double-reply when WhatsApp sends image+text as two events
-    private static final int BOT_COOLDOWN_SECONDS = 45;
+    // Bot cooldown: avoid double-reply when WhatsApp sends image+text as two simultaneous events
+    private static final int BOT_COOLDOWN_SECONDS = 5;
 
     @Transactional
     public void handleIncomingMessage(String from, String messageType, String content,
@@ -128,12 +129,16 @@ public class ConversationService {
         conversation.setUnreadCount(conversation.getUnreadCount() + 1);
 
         // 7. Route to bot or human
-        if (shouldRunBot(conversation, waType)) {
+        BotDecision botDecision = decideBotAction(conversation, waType);
+        if (botDecision == BotDecision.RUN) {
             conversationRepository.save(conversation);
             chatbotEngine.processMessage(conversation, content, buttonId, buttonTitle);
             conversationRepository.save(conversation);
-        } else {
+        } else if (botDecision == BotDecision.NEEDS_HUMAN) {
             conversation.setStatus(ConversationStatus.NEEDS_HUMAN);
+            conversationRepository.save(conversation);
+        } else {
+            // COOLDOWN — message saved but bot silently skips, no status change
             conversationRepository.save(conversation);
         }
 
@@ -150,16 +155,18 @@ public class ConversationService {
                 from, messageType, conversation.getId());
     }
 
-    private boolean shouldRunBot(WhatsappConversation conv, WaMessageType messageType) {
+    private enum BotDecision { RUN, NEEDS_HUMAN, COOLDOWN }
+
+    private BotDecision decideBotAction(WhatsappConversation conv, WaMessageType messageType) {
         // Global off switch
         if (!chatbotGlobalSettings.isEnabled()) {
             log.debug("Bot globally disabled — routing to human");
-            return false;
+            return BotDecision.NEEDS_HUMAN;
         }
-        // Per-chat toggle
-        if (!Boolean.TRUE.equals(conv.getChatbotActive())) return false;
+        // Per-chat toggle already off
+        if (!Boolean.TRUE.equals(conv.getChatbotActive())) return BotDecision.NEEDS_HUMAN;
         // Closed conversations never get bot
-        if (conv.getStatus() == ConversationStatus.CLOSED) return false;
+        if (conv.getStatus() == ConversationStatus.CLOSED) return BotDecision.NEEDS_HUMAN;
 
         // Smart auto-disable: if lead is in a warm/mid stage, turn off bot
         Lead lead = conv.getLead();
@@ -167,7 +174,7 @@ public class ConversationService {
             log.info("Lead {} is in status {} — auto-disabling bot for conversation {}",
                     lead.getId(), lead.getStatus(), conv.getId());
             conv.setChatbotActive(false);
-            return false;
+            return BotDecision.NEEDS_HUMAN;
         }
 
         // Cooldown: skip bot if we already replied in the last 45s (handles image+text double-fire).
@@ -177,11 +184,11 @@ public class ConversationService {
                     conv, LocalDateTime.now().minusSeconds(BOT_COOLDOWN_SECONDS));
             if (recentReply) {
                 log.info("Bot cooldown active for conversation {} — skipping auto-reply", conv.getId());
-                return false;
+                return BotDecision.COOLDOWN;
             }
         }
 
-        return true;
+        return BotDecision.RUN;
     }
 
     private Optional<Lead> findLeadByPhoneFlexible(String phone) {

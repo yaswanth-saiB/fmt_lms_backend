@@ -68,7 +68,7 @@ public class InboxController {
             @AuthenticationPrincipal UserDetails userDetails) {
         UUID userId = resolveUserId(userDetails);
         return ResponseEntity.ok(ApiResponse.success("Template sent",
-                inboxService.sendTemplate(id, request.getTemplateName(), request.getParameters(), userId)));
+                inboxService.sendTemplate(id, request.getTemplateName(), request.getParameters(), request.getParamNames(), userId)));
     }
 
     @PutMapping("/conversations/{id}/assign")
@@ -168,7 +168,7 @@ public class InboxController {
             @AuthenticationPrincipal UserDetails userDetails) {
         UUID userId = resolveUserId(userDetails);
         inboxService.directSend(req.getPhone(), req.getType(), req.getMessage(),
-                req.getTemplateName(), req.getParams(), userId);
+                req.getTemplateName(), req.getParams(), req.getParamNames(), userId);
         return ResponseEntity.ok(ApiResponse.success("Message sent", null));
     }
 

@@ -151,10 +151,11 @@ public class InboxService {
 
     @Transactional
     public MessageResponse sendTemplate(UUID conversationId, String templateName,
-                                         List<String> parameters, UUID sentByUserId) {
+                                         List<String> parameters, List<String> paramNames, UUID sentByUserId) {
         WhatsappConversation conv = findConversation(conversationId);
 
-        String waMessageId = whatsAppApiService.sendTemplateMessage(conv.getPhone(), templateName, parameters);
+        List<String> names = (paramNames != null && !paramNames.isEmpty()) ? paramNames : null;
+        String waMessageId = whatsAppApiService.sendTemplateMessage(conv.getPhone(), templateName, parameters, names, null);
 
         User sentBy = userRepository.findById(sentByUserId).orElse(null);
         WhatsappMessage msg = WhatsappMessage.builder()
@@ -359,13 +360,13 @@ public class InboxService {
 
     @Transactional
     public void directSend(String phone, String type, String message,
-                            String templateName, List<String> params, UUID sentByUserId) {
+                            String templateName, List<String> params, List<String> paramNames, UUID sentByUserId) {
         String waPhone = normalizeToWaPhone(phone);
 
         WhatsappConversation conv = conversationRepository.findByPhone(waPhone).orElseGet(() ->
                 conversationRepository.save(WhatsappConversation.builder()
                         .phone(waPhone)
-                        .entryPoint(ConversationEntryPoint.OUTBOUND)
+                        .entryPoint(ConversationEntryPoint.MANUAL)
                         .chatbotActive(false)
                         .build()));
 
@@ -375,7 +376,9 @@ public class InboxService {
         WaMessageType msgType;
 
         if ("TEMPLATE".equals(type)) {
-            waId = whatsAppApiService.sendTemplateMessage(waPhone, templateName, params);
+            log.info("directSend template: name={} params={} paramNames={}", templateName, params, paramNames);
+            List<String> pNames = (paramNames != null && !paramNames.isEmpty()) ? paramNames : null;
+            waId = whatsAppApiService.sendTemplateMessage(waPhone, templateName, params, pNames, null);
             displayText = "Template: " + templateName;
             msgType = WaMessageType.TEMPLATE;
         } else {

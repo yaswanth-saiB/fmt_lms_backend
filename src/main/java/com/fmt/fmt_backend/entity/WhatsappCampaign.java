@@ -29,9 +29,13 @@ public class WhatsappCampaign extends BaseEntity {
     @Column(name = "template_name", nullable = false, length = 100)
     private String templateName;
 
-    // JSON array of param strings: ["{{1}}", "{{2}}"] — {{name}} replaced at send time
+    // JSON array of param values: ["{{name}}"] — {{name}} replaced with lead name at send time
     @Column(name = "template_params", columnDefinition = "TEXT")
     private String templateParams;
+
+    // JSON array of param variable names matching templateParams: ["customer_name"] or [null] for positional
+    @Column(name = "template_param_names", columnDefinition = "TEXT")
+    private String templateParamNames;
 
     // Comma-separated LeadStatus values; null = no status filter (all leads)
     @Column(name = "lead_statuses", length = 500)

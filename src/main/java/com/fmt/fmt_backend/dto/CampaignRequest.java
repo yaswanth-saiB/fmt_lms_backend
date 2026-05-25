@@ -11,6 +11,7 @@ public class CampaignRequest {
     private String description;
     private String templateName;
     private List<String> templateParams;
-    private List<LeadStatus> leadStatuses;  // null/empty = all statuses
-    private String courseInterest;          // null/blank = all course interests
+    private List<String> templateParamNames; // variable names parallel to templateParams; null entry = positional
+    private List<LeadStatus> leadStatuses;   // null/empty = all statuses
+    private String courseInterest;           // null/blank = all course interests
 }

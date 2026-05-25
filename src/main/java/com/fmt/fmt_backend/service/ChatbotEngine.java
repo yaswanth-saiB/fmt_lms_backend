@@ -26,6 +26,11 @@ public class ChatbotEngine {
     private final WhatsAppApiService whatsAppApiService;
     private final ObjectMapper objectMapper;
 
+    // WhatsApp media handle IDs — uploaded once, reused forever
+    private static final String IMG_WELCOME  = "1547855303634028";
+    private static final String IMG_HIT      = "1196867872476788";
+    private static final String IMG_FOREX    = "799899596475066";
+
     @Transactional
     public void processMessage(WhatsappConversation conversation, String content,
                                 String buttonId, String buttonTitle) {
@@ -52,15 +57,14 @@ public class ChatbotEngine {
 
     private void handleInitial(WhatsappConversation conversation) {
         String name = leadName(conversation);
-        sendText(conversation,
-                "👋 Hi " + name + "! Welcome to *First Million Trade* — India's premier trading education platform.\n\n" +
-                "We help you master Stock Markets, Forex & Options Trading with expert mentorship. 🚀");
-        sendMenu(conversation);
+        // Template already has 3 quick-reply buttons — no separate menu needed
+        sendTemplate(conversation, "fmt_click_wa_welcome", List.of(name), List.of("customer_name"), IMG_WELCOME);
         transition(conversation, ChatbotState.MENU_SHOWN);
     }
 
     private void handleMenuShown(WhatsappConversation conversation, String content, String buttonId) {
-        String trigger = buttonId != null ? buttonId.toUpperCase() : resolveMenuKeyword(content);
+        // normalizeMenuTrigger maps both our MENU_ IDs and template quick-reply button payloads
+        String trigger = buttonId != null ? normalizeMenuTrigger(buttonId) : resolveMenuKeyword(content);
 
         switch (trigger) {
             case "MENU_COURSES" -> {
@@ -68,8 +72,8 @@ public class ChatbotEngine {
                 transition(conversation, ChatbotState.COURSE_SELECTION);
             }
             case "MENU_DEMO" -> {
-                sendTemplate(conversation, "fmt_demo_booking_confirm", List.of(leadName(conversation)));
-                sendDateButtons(conversation);
+                // Template already has "Demo Today", "Demo Tomorrow", "Pick Another Day" buttons
+                sendTemplate(conversation, "fmt_demo_booking_confirm", List.of(leadName(conversation)), List.of("customer_name"), IMG_WELCOME);
                 transition(conversation, ChatbotState.DEMO_DATE_ASKED);
             }
             case "MENU_FEE" -> {
@@ -89,8 +93,8 @@ public class ChatbotEngine {
         String input = (buttonId != null ? buttonId : content != null ? content : "").trim().toUpperCase();
 
         if (input.matches("COURSE_HIT|1|HIT|HIT PROGRAM|HIT TRADING")) {
-            sendTemplate(conversation, "fmt_hit_program_details", List.of());
-            sendMenu(conversation);
+            // Template has its own CTA buttons (Book Free Demo, Know Fee Details, Call Now) — no extra menu
+            sendTemplate(conversation, "fmt_hit_program_details", List.of(), IMG_HIT);
             transition(conversation, ChatbotState.MENU_SHOWN);
 
         } else if (input.matches("COURSE_OPTIONS|2|OPTIONS|OPTIONS TRADING")) {
@@ -100,35 +104,14 @@ public class ChatbotEngine {
                     "✅ Covered Call, Put Spreads, Iron Condor\n" +
                     "✅ Options Greeks — Delta, Gamma, Theta, Vega\n" +
                     "✅ Live market trade setups\n\n" +
-                    "Our advisor will contact you with the full syllabus and batch schedule!");
+                    "📞 Our advisor will contact you with full details and batch schedule!");
+            // Text-only response has no buttons — send interactive menu so user can continue
             sendMenu(conversation);
             transition(conversation, ChatbotState.MENU_SHOWN);
 
         } else if (input.matches("COURSE_FOREX|3|FOREX|FOREX TRADING")) {
-            sendTemplate(conversation, "fmt_forex_program_details", List.of());
-            sendMenu(conversation);
-            transition(conversation, ChatbotState.MENU_SHOWN);
-
-        } else if (input.matches("COURSE_STOCK|4|STOCK|STOCK MARKET|EQUITY")) {
-            sendText(conversation,
-                    "📊 *Stock Market Program*\n\n" +
-                    "From basics to advanced — learn to pick stocks and build a portfolio.\n\n" +
-                    "✅ Fundamental + Technical Analysis\n" +
-                    "✅ Portfolio building strategies\n" +
-                    "✅ Risk management framework\n\n" +
-                    "Our advisor will contact you with the full program details!");
-            sendMenu(conversation);
-            transition(conversation, ChatbotState.MENU_SHOWN);
-
-        } else if (input.matches("COURSE_SMC|5|SMC|SMART MONEY|SMART MONEY CONCEPTS")) {
-            sendText(conversation,
-                    "💡 *Smart Money Concepts (SMC)*\n\n" +
-                    "Trade alongside institutional money and understand real market structure.\n\n" +
-                    "✅ Order Blocks & Liquidity Zones\n" +
-                    "✅ Break of Structure / CHOCH\n" +
-                    "✅ Premium & Discount zone trading\n\n" +
-                    "Our team will contact you with the full program details!");
-            sendMenu(conversation);
+            // Template has its own CTA buttons — no extra menu
+            sendTemplate(conversation, "fmt_forex_program_details", List.of(), IMG_FOREX);
             transition(conversation, ChatbotState.MENU_SHOWN);
 
         } else {
@@ -252,6 +235,9 @@ public class ChatbotEngine {
             setSavedData(conversation, "unknownCount", String.valueOf(unknownCount));
             sendText(conversation,
                     "Sorry, I didn't quite get that. Please use the menu options or type your query clearly.");
+            // Always return to MENU_SHOWN so the menu buttons land in the right handler,
+            // regardless of which state the user was in when they sent an unrecognized message.
+            conversation.setChatbotState(ChatbotState.MENU_SHOWN);
             sendMenu(conversation);
         }
     }
@@ -330,9 +316,7 @@ public class ChatbotEngine {
                 "📚 *Courses at First Million Trade:*\n\n" +
                 "1️⃣ HIT Trading Program\n" +
                 "2️⃣ Options Trading\n" +
-                "3️⃣ Forex Trading\n" +
-                "4️⃣ Stock Market\n" +
-                "5️⃣ Smart Money Concepts (SMC)\n\n" +
+                "3️⃣ Forex Trading\n\n" +
                 "Reply with the *number* or *course name* to know more!");
     }
 
@@ -399,9 +383,18 @@ public class ChatbotEngine {
     }
 
     private void sendTemplate(WhatsappConversation conversation, String templateName, List<String> params) {
+        sendTemplate(conversation, templateName, params, null, null);
+    }
+
+    private void sendTemplate(WhatsappConversation conversation, String templateName, List<String> params, String headerImageId) {
+        sendTemplate(conversation, templateName, params, null, headerImageId);
+    }
+
+    private void sendTemplate(WhatsappConversation conversation, String templateName,
+                               List<String> params, List<String> paramNames, String headerImageId) {
         String waId = null;
         try {
-            waId = whatsAppApiService.sendTemplateMessage(conversation.getPhone(), templateName, params);
+            waId = whatsAppApiService.sendTemplateMessage(conversation.getPhone(), templateName, params, paramNames, headerImageId);
         } catch (Exception e) {
             log.error("sendTemplate '{}' failed for {}: {}", templateName, conversation.getPhone(), e.getMessage());
         }
@@ -465,6 +458,20 @@ public class ChatbotEngine {
     private String truncate(String text, int max) {
         if (text == null) return "";
         return text.length() > max ? text.substring(0, max) + "…" : text;
+    }
+
+    private String normalizeMenuTrigger(String buttonId) {
+        String upper = buttonId.toUpperCase().trim();
+        return switch (upper) {
+            // Our interactive button IDs — pass through
+            case "MENU_COURSES", "MENU_DEMO", "MENU_FEE", "TALK_HUMAN", "ESCALATED" -> upper;
+            // Welcome template quick-reply button payloads (Meta uses button text as payload)
+            case "OUR COURSES", "COURSES", "VIEW COURSES" -> "MENU_COURSES";
+            case "FREE DEMO CLASS", "BOOK FREE DEMO", "BOOK DEMO", "BOOK A DEMO", "DEMO", "BOOK DEMO NOW" -> "MENU_DEMO";
+            case "KNOW FEE DETAILS", "FEE INFO", "ABOUT FEES", "FEES", "FEE" -> "MENU_FEE";
+            case "TALK TO US", "TALK TO TEAM", "CONTACT US", "TALK", "CALL NOW", "CALL US", "CALL US TODAY" -> "TALK_HUMAN";
+            default -> upper;
+        };
     }
 
     private String resolveMenuKeyword(String content) {

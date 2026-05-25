@@ -47,6 +47,7 @@ public class CampaignService {
                 .description(req.getDescription())
                 .templateName(req.getTemplateName())
                 .templateParams(serializeParams(req.getTemplateParams()))
+                .templateParamNames(serializeParams(req.getTemplateParamNames()))
                 .leadStatuses(serializeStatuses(req.getLeadStatuses()))
                 .courseInterest(req.getCourseInterest())
                 .createdBy(creator)
@@ -113,6 +114,7 @@ public class CampaignService {
         campaignRepository.save(campaign);
 
         List<String> params = deserializeParams(campaign.getTemplateParams());
+        List<String> paramNames = deserializeParams(campaign.getTemplateParamNames());
         User sentBy = userRepository.findById(sentByUserId).orElse(null);
 
         int success = 0;
@@ -129,7 +131,8 @@ public class CampaignService {
             try {
                 List<String> resolved = resolveParams(params, lead);
                 String msgId = whatsAppApiService.sendTemplateMessage(
-                        lead.getPhone(), campaign.getTemplateName(), resolved);
+                        lead.getPhone(), campaign.getTemplateName(), resolved,
+                        paramNames.isEmpty() ? null : paramNames, null);
 
                 // Record in conversation
                 WhatsappConversation conv = getOrCreateConversation(lead);

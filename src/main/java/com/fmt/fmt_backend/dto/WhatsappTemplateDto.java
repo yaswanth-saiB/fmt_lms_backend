@@ -3,6 +3,8 @@ package com.fmt.fmt_backend.dto;
 import lombok.Builder;
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 @Builder
 public class WhatsappTemplateDto {
@@ -12,4 +14,6 @@ public class WhatsappTemplateDto {
     private String language;
     private String bodyText;
     private int paramCount;
+    /** Variable names in body order — null entry means positional ({{1}}) and needs no parameter_name field */
+    private List<String> paramNames;
 }

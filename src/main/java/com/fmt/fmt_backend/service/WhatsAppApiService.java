@@ -10,8 +10,10 @@ import org.springframework.web.client.RestTemplate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -50,6 +52,20 @@ public class WhatsAppApiService {
     }
 
     public String sendTemplateMessage(String phone, String templateName, List<String> params) {
+        return sendTemplateMessage(phone, templateName, params, null, null);
+    }
+
+    public String sendTemplateMessage(String phone, String templateName, List<String> params, String headerImageId) {
+        return sendTemplateMessage(phone, templateName, params, null, headerImageId);
+    }
+
+    /**
+     * Full overload: supports named template variables (parameter_name) and image header.
+     * paramNames: parallel list to params — if index i has a non-null name, adds "parameter_name" to that param.
+     *             Pass null or empty list for positional variables ({{1}}, {{2}}).
+     */
+    public String sendTemplateMessage(String phone, String templateName, List<String> params,
+                                       List<String> paramNames, String headerImageId) {
         Map<String, Object> body = new HashMap<>();
         body.put("messaging_product", "whatsapp");
         body.put("to", phone);
@@ -59,12 +75,36 @@ public class WhatsAppApiService {
         template.put("name", templateName);
         template.put("language", Map.of("code", "en"));
 
+        List<Map<String, Object>> components = new ArrayList<>();
+
+        if (headerImageId != null && !headerImageId.isBlank()) {
+            Map<String, Object> headerComp = new HashMap<>();
+            headerComp.put("type", "header");
+            headerComp.put("parameters", List.of(
+                    Map.of("type", "image", "image", Map.of("id", headerImageId))
+            ));
+            components.add(headerComp);
+        }
+
         if (params != null && !params.isEmpty()) {
             List<Map<String, String>> parameters = new ArrayList<>();
-            for (String param : params) {
-                parameters.add(Map.of("type", "text", "text", param));
+            for (int i = 0; i < params.size(); i++) {
+                Map<String, String> p = new HashMap<>();
+                p.put("type", "text");
+                if (paramNames != null && i < paramNames.size() && paramNames.get(i) != null) {
+                    p.put("parameter_name", paramNames.get(i));
+                }
+                p.put("text", params.get(i));
+                parameters.add(p);
             }
-            template.put("components", List.of(Map.of("type", "body", "parameters", parameters)));
+            Map<String, Object> bodyComp = new HashMap<>();
+            bodyComp.put("type", "body");
+            bodyComp.put("parameters", parameters);
+            components.add(bodyComp);
+        }
+
+        if (!components.isEmpty()) {
+            template.put("components", components);
         }
 
         body.put("template", template);
@@ -132,13 +172,15 @@ public class WhatsAppApiService {
                     .filter(t -> "APPROVED".equals(t.get("status")))
                     .map(t -> {
                         String bodyText = extractBodyText(t);
+                        List<String> pNames = extractParamNames(bodyText);
                         return WhatsappTemplateDto.builder()
                                 .name((String) t.get("name"))
                                 .status((String) t.get("status"))
                                 .category((String) t.get("category"))
                                 .language((String) t.get("language"))
                                 .bodyText(bodyText)
-                                .paramCount(countParams(bodyText))
+                                .paramCount(pNames.size())
+                                .paramNames(pNames)
                                 .build();
                     })
                     .collect(Collectors.toList());
@@ -159,11 +201,22 @@ public class WhatsAppApiService {
     }
 
     private int countParams(String text) {
-        if (text == null || text.isBlank()) return 0;
-        Matcher m = Pattern.compile("\\{\\{\\d+}}").matcher(text);
-        int count = 0;
-        while (m.find()) count++;
-        return count;
+        return extractParamNames(text).size();
+    }
+
+    // Returns param variable names in declaration order; null entry = positional ({{1}}) = no parameter_name needed
+    private List<String> extractParamNames(String text) {
+        if (text == null || text.isBlank()) return List.of();
+        Matcher m = Pattern.compile("\\{\\{([\\w]+)}}").matcher(text);
+        List<String> names = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        while (m.find()) {
+            String name = m.group(1);
+            if (seen.add(name)) {
+                names.add(name.matches("\\d+") ? null : name);
+            }
+        }
+        return names;
     }
 
     public record MediaDownload(byte[] content, String mimeType) {}
