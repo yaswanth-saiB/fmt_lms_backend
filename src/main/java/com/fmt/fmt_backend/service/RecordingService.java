@@ -440,7 +440,21 @@ public class RecordingService {
             log.info("Reusing existing Bunny videoId={} for recording={} (retry)", bunnyVideoId, recordingId);
         }
 
-        // ---- Step 2: Download from Zoom to temp file, then upload to Bunny ----
+        // ---- Step 2: Refresh URL if it is a short-lived webhook_download URL ----
+        // Zoom webhook_download URLs expire in ~60s and require a download_token, not OAuth.
+        // Fetching a fresh URL from the Zoom API returns a standard URL that works with OAuth Bearer.
+        if (zoomDownloadUrl != null && zoomDownloadUrl.contains("webhook_download") && zoomMeetingId != null) {
+            try {
+                zoomDownloadUrl = zoomService.fetchRecordingDownloadUrl(zoomMeetingId);
+                r.setZoomDownloadUrl(zoomDownloadUrl);
+                recordingRepository.save(r);
+                log.info("Refreshed webhook_download URL for recording={}", recordingId);
+            } catch (Exception e) {
+                log.warn("Could not refresh download URL for recording={}, proceeding with stored URL: {}", recordingId, e.getMessage());
+            }
+        }
+
+        // ---- Step 3: Download from Zoom to temp file, then upload to Bunny ----
         streamZoomToBunny(zoomDownloadUrl, bunnyVideoId, recordingId);
         log.info("Video uploaded to Bunny for recording={}", recordingId);
 

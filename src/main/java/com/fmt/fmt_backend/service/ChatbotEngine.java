@@ -24,6 +24,7 @@ public class ChatbotEngine {
     private final LeadRepository leadRepository;
     private final LeadActivityRepository leadActivityRepository;
     private final WhatsAppApiService whatsAppApiService;
+    private final ResendEmailService emailService;
     private final ObjectMapper objectMapper;
 
     // WhatsApp media handle IDs — uploaded once, reused forever
@@ -197,6 +198,12 @@ public class ChatbotEngine {
                 "Our team will reach out to confirm the exact time%s. See you soon! 🎉\n\n" +
                 "📞 Questions? Call us: *+91 90320 46008*",
                 name, date, mode, time, zoomOrVenue));
+
+        try {
+            emailService.sendChatbotDemoBookingAlert(name, conversation.getPhone(), date, mode, time);
+        } catch (Exception e) {
+            log.warn("Failed to send demo booking email alert: {}", e.getMessage());
+        }
 
         Lead lead = conversation.getLead();
         if (lead != null) {

@@ -154,6 +154,14 @@ public class WhatsAppApiService {
         return send(body);
     }
 
+    public List<String> getParamNamesForTemplate(String templateName) {
+        return getApprovedTemplates().stream()
+                .filter(t -> templateName.equals(t.getName()))
+                .findFirst()
+                .map(t -> t.getParamNames() != null ? t.getParamNames() : List.<String>of())
+                .orElse(List.of());
+    }
+
     @SuppressWarnings("unchecked")
     public List<WhatsappTemplateDto> getApprovedTemplates() {
         if (wabaId == null || wabaId.isBlank()) {

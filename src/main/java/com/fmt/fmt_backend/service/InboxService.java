@@ -284,6 +284,16 @@ public class InboxService {
     }
 
     @Transactional
+    public QuickReplyResponse updateQuickReply(UUID id, QuickReplyRequest req) {
+        QuickReply qr = quickReplyRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Quick reply not found"));
+        qr.setTitle(req.getTitle());
+        qr.setContent(req.getContent());
+        qr = quickReplyRepository.save(qr);
+        return toQuickReplyResponse(qr);
+    }
+
+    @Transactional
     public void deleteQuickReply(UUID id) {
         quickReplyRepository.deleteById(id);
     }
@@ -369,6 +379,13 @@ public class InboxService {
                         .entryPoint(ConversationEntryPoint.MANUAL)
                         .chatbotActive(false)
                         .build()));
+
+        if ("TEXT".equals(type)) {
+            if (conv.getWindowExpiresAt() == null || conv.getWindowExpiresAt().isBefore(LocalDateTime.now())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "24-hour messaging window has expired. Use a template to re-engage this lead.");
+            }
+        }
 
         User sentBy = userRepository.findById(sentByUserId).orElse(null);
         String waId;

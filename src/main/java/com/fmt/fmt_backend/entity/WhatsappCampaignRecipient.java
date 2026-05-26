@@ -1,5 +1,6 @@
 package com.fmt.fmt_backend.entity;
 
+import com.fmt.fmt_backend.enums.WaMessageStatus;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -47,4 +48,18 @@ public class WhatsappCampaignRecipient {
 
     @Column(name = "sent_at")
     private LocalDateTime sentAt;
+
+    // Delivery tracking — updated via webhook status events
+    @Enumerated(EnumType.STRING)
+    @Column(name = "delivery_status", length = 20)
+    @Builder.Default
+    private WaMessageStatus deliveryStatus = WaMessageStatus.SENT;
+
+    // Reply tracking — true when lead sends any inbound message after campaign
+    @Column(name = "replied")
+    @Builder.Default
+    private Boolean replied = false;
+
+    @Column(name = "replied_at")
+    private LocalDateTime repliedAt;
 }

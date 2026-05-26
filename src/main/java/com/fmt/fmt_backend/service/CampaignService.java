@@ -47,7 +47,10 @@ public class CampaignService {
                 .description(req.getDescription())
                 .templateName(req.getTemplateName())
                 .templateParams(serializeParams(req.getTemplateParams()))
-                .templateParamNames(serializeParams(req.getTemplateParamNames()))
+                .templateParamNames(serializeParams(
+                        (req.getTemplateParamNames() != null && !req.getTemplateParamNames().isEmpty())
+                                ? req.getTemplateParamNames()
+                                : whatsAppApiService.getParamNamesForTemplate(req.getTemplateName())))
                 .leadStatuses(serializeStatuses(req.getLeadStatuses()))
                 .courseInterest(req.getCourseInterest())
                 .createdBy(creator)
@@ -284,6 +287,13 @@ public class CampaignService {
     private CampaignDetailResponse toDetail(WhatsappCampaign c, List<WhatsappCampaignRecipient> recipients) {
         String createdBy = c.getCreatedBy() != null
                 ? c.getCreatedBy().getFirstName() + " " + c.getCreatedBy().getLastName() : null;
+
+        long deliveredCount = recipients.stream().filter(r -> !Boolean.TRUE.equals(r.getFailed())
+                && (r.getDeliveryStatus() == WaMessageStatus.DELIVERED || r.getDeliveryStatus() == WaMessageStatus.READ)).count();
+        long readCount = recipients.stream().filter(r -> !Boolean.TRUE.equals(r.getFailed())
+                && r.getDeliveryStatus() == WaMessageStatus.READ).count();
+        long repliedCount = recipients.stream().filter(r -> Boolean.TRUE.equals(r.getReplied())).count();
+
         List<CampaignDetailResponse.RecipientResponse> recipientResponses = recipients.stream()
                 .map(r -> CampaignDetailResponse.RecipientResponse.builder()
                         .id(r.getId())
@@ -294,6 +304,9 @@ public class CampaignService {
                         .errorMessage(r.getErrorMessage())
                         .waMessageId(r.getWaMessageId())
                         .sentAt(r.getSentAt())
+                        .deliveryStatus(r.getDeliveryStatus() != null ? r.getDeliveryStatus().name() : null)
+                        .replied(r.getReplied())
+                        .repliedAt(r.getRepliedAt())
                         .build())
                 .collect(Collectors.toList());
 
@@ -309,6 +322,9 @@ public class CampaignService {
                 .totalCount(c.getTotalCount())
                 .successCount(c.getSuccessCount())
                 .failCount(c.getFailCount())
+                .deliveredCount(deliveredCount)
+                .readCount(readCount)
+                .repliedCount(repliedCount)
                 .createdByName(createdBy)
                 .createdAt(c.getCreatedAt())
                 .sentAt(c.getSentAt())

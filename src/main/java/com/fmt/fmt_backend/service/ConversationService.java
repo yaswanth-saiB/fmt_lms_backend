@@ -26,6 +26,7 @@ public class ConversationService {
     private final ChatbotEngine chatbotEngine;
     private final ChatbotGlobalSettings chatbotGlobalSettings;
     private final UserRepository userRepository;
+    private final WhatsappCampaignRecipientRepository campaignRecipientRepository;
 
     // Lead statuses where bot auto-disables — human should handle these
     private static final Set<LeadStatus> HUMAN_REQUIRED_STATUSES = Set.of(
@@ -151,6 +152,26 @@ public class ConversationService {
                     .build());
         }
 
+        // 9. Mark campaign recipient as replied (checks last 7 days, both phone formats)
+        try {
+            String phone10 = from.length() == 12 && from.startsWith("91") ? from.substring(2) : from;
+            String phone12 = from.length() == 10 ? "91" + from : from;
+            List<com.fmt.fmt_backend.entity.WhatsappCampaignRecipient> recentRecipients =
+                    campaignRecipientRepository.findRecentByPhones(
+                            List.of(from, phone10, phone12), LocalDateTime.now().minusDays(7));
+            if (!recentRecipients.isEmpty()) {
+                com.fmt.fmt_backend.entity.WhatsappCampaignRecipient recipient = recentRecipients.get(0);
+                if (!Boolean.TRUE.equals(recipient.getReplied())) {
+                    recipient.setReplied(true);
+                    recipient.setRepliedAt(LocalDateTime.now());
+                    campaignRecipientRepository.save(recipient);
+                    log.info("Campaign reply recorded: phone={} campaign={}", from, recipient.getCampaign().getId());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Campaign reply tracking failed: {}", e.getMessage());
+        }
+
         log.info("Incoming WhatsApp message processed: from={} type={} conv={}",
                 from, messageType, conversation.getId());
     }
@@ -208,18 +229,38 @@ public class ConversationService {
 
     @Transactional
     public void updateMessageStatus(String whatsappMessageId, String status, String recipient) {
-        messageRepository.findByWhatsappMessageId(whatsappMessageId).ifPresentOrElse(
-                msg -> {
-                    try {
-                        msg.setStatus(WaMessageStatus.valueOf(status.toUpperCase()));
-                        messageRepository.save(msg);
-                        log.debug("Message {} status updated to {}", whatsappMessageId, status);
-                    } catch (IllegalArgumentException e) {
-                        log.warn("Unknown WA message status '{}' for id={}", status, whatsappMessageId);
-                    }
-                },
-                () -> log.debug("Status update for unknown message id={} — ignored", whatsappMessageId)
-        );
+        WaMessageStatus newStatus = null;
+        try {
+            newStatus = WaMessageStatus.valueOf(status.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            log.warn("Unknown WA message status '{}' for id={}", status, whatsappMessageId);
+            return;
+        }
+
+        final WaMessageStatus finalStatus = newStatus;
+
+        // Update the message record
+        messageRepository.findByWhatsappMessageId(whatsappMessageId).ifPresent(msg -> {
+            msg.setStatus(finalStatus);
+            messageRepository.save(msg);
+            log.debug("Message {} status updated to {}", whatsappMessageId, status);
+        });
+
+        // Update campaign recipient delivery status (SENT → DELIVERED → READ only, never backward)
+        campaignRecipientRepository.findByWaMessageId(whatsappMessageId).ifPresent(r -> {
+            if (isDeliveryProgression(r.getDeliveryStatus(), finalStatus)) {
+                r.setDeliveryStatus(finalStatus);
+                campaignRecipientRepository.save(r);
+                log.debug("Campaign recipient {} delivery status updated to {}", r.getId(), finalStatus);
+            }
+        });
+    }
+
+    private boolean isDeliveryProgression(WaMessageStatus current, WaMessageStatus next) {
+        if (next != WaMessageStatus.DELIVERED && next != WaMessageStatus.READ) return false;
+        if (current == WaMessageStatus.READ) return false;
+        if (current == WaMessageStatus.DELIVERED && next == WaMessageStatus.DELIVERED) return false;
+        return true;
     }
 
     private WaMessageType parseMessageType(String type) {

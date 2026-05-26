@@ -181,6 +181,37 @@ public class ResendEmailService {
     }
 
     @Async
+    public void sendChatbotDemoBookingAlert(String leadName, String phone,
+                                            String demoDate, String demoMode, String demoTime) {
+        SenderInfo sender = senderMap.get(EmailType.PROMO); // from info mail
+        String html = String.format("""
+            <!DOCTYPE html>
+            <html>
+            <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0;">
+                <div style="max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 8px; padding: 40px; border-left: 4px solid #38a169;">
+                    <h2 style="color: #38a169; margin-top: 0;">📅 New Demo Class Booked via WhatsApp Bot</h2>
+                    <p style="color: #555;">A lead has booked a free demo class through the chatbot. Please confirm the exact time and share the Zoom link or venue details.</p>
+                    <table style="width: 100%%; border-collapse: collapse; margin: 24px 0;">
+                        <tr><td style="padding: 10px 8px; color: #888; width: 130px;">Lead Name</td><td style="padding: 10px 8px; font-weight: bold;">%s</td></tr>
+                        <tr style="background:#f9f9f9"><td style="padding: 10px 8px; color: #888;">Phone</td><td style="padding: 10px 8px; font-weight: bold;">%s</td></tr>
+                        <tr><td style="padding: 10px 8px; color: #888;">Date</td><td style="padding: 10px 8px; font-weight: bold;">%s</td></tr>
+                        <tr style="background:#f9f9f9"><td style="padding: 10px 8px; color: #888;">Mode</td><td style="padding: 10px 8px; font-weight: bold;">%s</td></tr>
+                        <tr><td style="padding: 10px 8px; color: #888;">Time Slot</td><td style="padding: 10px 8px; font-weight: bold;">%s</td></tr>
+                    </table>
+                    <p style="color: #555; font-size: 14px;">View the full conversation in the inbox to follow up.</p>
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
+                    <p style="font-size: 12px; color: #999;">Automated alert — First Million Trade Chatbot</p>
+                </div>
+            </body>
+            </html>
+            """,
+            nvl(leadName), nvl(phone), nvl(demoDate), nvl(demoMode), nvl(demoTime)
+        );
+        sendEmail(properties.getAdminEmail(), "📅 Demo Booked — " + nvl(leadName) + " (" + nvl(phone) + ")",
+                html, sender, EmailType.PROMO);
+    }
+
+    @Async
     public void sendEnquiryFailureAlert(com.fmt.fmt_backend.dto.EnquiryRequest request, String ipAddress, String error) {
         SenderInfo sender = senderMap.get(EmailType.ADMIN);
         String html = String.format("""

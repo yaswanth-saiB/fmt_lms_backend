@@ -22,6 +22,9 @@ public class CampaignDetailResponse {
     private Integer totalCount;
     private Integer successCount;
     private Integer failCount;
+    private long deliveredCount;
+    private long readCount;
+    private long repliedCount;
     private String createdByName;
     private LocalDateTime createdAt;
     private LocalDateTime sentAt;
@@ -38,5 +41,8 @@ public class CampaignDetailResponse {
         private String errorMessage;
         private String waMessageId;
         private LocalDateTime sentAt;
+        private String deliveryStatus;
+        private Boolean replied;
+        private LocalDateTime repliedAt;
     }
 }

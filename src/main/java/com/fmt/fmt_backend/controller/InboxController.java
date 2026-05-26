@@ -153,6 +153,14 @@ public class InboxController {
                 inboxService.createQuickReply(req, userId)));
     }
 
+    @PutMapping("/quick-replies/{id}")
+    public ResponseEntity<ApiResponse<QuickReplyResponse>> updateQuickReply(
+            @PathVariable UUID id,
+            @RequestBody QuickReplyRequest req) {
+        return ResponseEntity.ok(ApiResponse.success("Quick reply updated",
+                inboxService.updateQuickReply(id, req)));
+    }
+
     @DeleteMapping("/quick-replies/{id}")
     public ResponseEntity<ApiResponse<Void>> deleteQuickReply(@PathVariable UUID id) {
         inboxService.deleteQuickReply(id);
