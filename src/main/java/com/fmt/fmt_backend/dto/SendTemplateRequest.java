@@ -11,4 +11,5 @@ public class SendTemplateRequest {
     private String templateName;
     private List<String> parameters;
     private List<String> paramNames; // variable names parallel to parameters; null entry = positional
+    private String headerImageHandle; // for IMAGE-header templates
 }

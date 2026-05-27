@@ -189,14 +189,9 @@ public class ConversationService {
         // Closed conversations never get bot
         if (conv.getStatus() == ConversationStatus.CLOSED) return BotDecision.NEEDS_HUMAN;
 
-        // Smart auto-disable: if lead is in a warm/mid stage, turn off bot
-        Lead lead = conv.getLead();
-        if (lead != null && lead.getStatus() != null && HUMAN_REQUIRED_STATUSES.contains(lead.getStatus())) {
-            log.info("Lead {} is in status {} — auto-disabling bot for conversation {}",
-                    lead.getId(), lead.getStatus(), conv.getId());
-            conv.setChatbotActive(false);
-            return BotDecision.NEEDS_HUMAN;
-        }
+        // Note: lead status is NOT checked here — chatbotActive is the single source of truth.
+        // The bot disables itself (chatbotActive=false) on escalation or demo booking.
+        // Campaigns and directSend explicitly set chatbotActive=true, which must be respected.
 
         // Cooldown: skip bot if we already replied in the last 45s (handles image+text double-fire).
         // Button replies are explicit user actions — never throttle them.

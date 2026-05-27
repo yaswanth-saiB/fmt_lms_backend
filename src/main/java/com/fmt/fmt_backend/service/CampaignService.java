@@ -120,6 +120,12 @@ public class CampaignService {
         List<String> paramNames = deserializeParams(campaign.getTemplateParamNames());
         User sentBy = userRepository.findById(sentByUserId).orElse(null);
 
+        String headerImageHandle = whatsAppApiService.getApprovedTemplates().stream()
+                .filter(t -> campaign.getTemplateName().equals(t.getName()))
+                .map(t -> t.getHeaderImageHandle())
+                .filter(h -> h != null)
+                .findFirst().orElse(null);
+
         int success = 0;
         int failed = 0;
         List<WhatsappCampaignRecipient> recipients = new ArrayList<>();
@@ -135,7 +141,7 @@ public class CampaignService {
                 List<String> resolved = resolveParams(params, lead);
                 String msgId = whatsAppApiService.sendTemplateMessage(
                         lead.getPhone(), campaign.getTemplateName(), resolved,
-                        paramNames.isEmpty() ? null : paramNames, null);
+                        paramNames.isEmpty() ? null : paramNames, headerImageHandle);
 
                 // Record in conversation
                 WhatsappConversation conv = getOrCreateConversation(lead);
@@ -154,6 +160,9 @@ public class CampaignService {
                 messageRepository.save(msg);
                 conv.setLastMessage("Campaign: " + campaign.getTemplateName());
                 conv.setLastMessageAt(LocalDateTime.now());
+                conv.setChatbotActive(true);
+                conv.setChatbotState(com.fmt.fmt_backend.enums.ChatbotState.MENU_SHOWN);
+                conv.setStatus(ConversationStatus.OPEN);
                 conversationRepository.save(conv);
 
                 leadActivityRepository.save(LeadActivity.builder()

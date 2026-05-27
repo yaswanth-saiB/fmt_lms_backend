@@ -22,4 +22,5 @@ public class DirectSendRequest {
     private String templateName;
     private List<String> params;
     private List<String> paramNames; // variable names parallel to params; null entry = positional
+    private String headerImageHandle; // for IMAGE-header templates
 }

@@ -16,4 +16,8 @@ public class WhatsappTemplateDto {
     private int paramCount;
     /** Variable names in body order — null entry means positional ({{1}}) and needs no parameter_name field */
     private List<String> paramNames;
+    /** "IMAGE", "VIDEO", "DOCUMENT", "TEXT", or null if no header */
+    private String headerType;
+    /** Media handle from template example — reusable as headerImageId when sending IMAGE header templates */
+    private String headerImageHandle;
 }

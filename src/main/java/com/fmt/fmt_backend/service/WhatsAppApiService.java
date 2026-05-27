@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 public class WhatsAppApiService {
 
     private static final String GRAPH_API_BASE = "https://graph.facebook.com/v18.0";
+    private static final String IMG_WELCOME = "1547855303634028";
 
     @Value("${whatsapp.access-token}")
     private String accessToken;
@@ -78,10 +79,16 @@ public class WhatsAppApiService {
         List<Map<String, Object>> components = new ArrayList<>();
 
         if (headerImageId != null && !headerImageId.isBlank()) {
+            Map<String, Object> imageParam = new HashMap<>();
+            if (headerImageId.startsWith("http")) {
+                imageParam.put("link", headerImageId);
+            } else {
+                imageParam.put("id", headerImageId);
+            }
             Map<String, Object> headerComp = new HashMap<>();
             headerComp.put("type", "header");
             headerComp.put("parameters", List.of(
-                    Map.of("type", "image", "image", Map.of("id", headerImageId))
+                    Map.of("type", "image", "image", imageParam)
             ));
             components.add(headerComp);
         }
@@ -181,6 +188,8 @@ public class WhatsAppApiService {
                     .map(t -> {
                         String bodyText = extractBodyText(t);
                         List<String> pNames = extractParamNames(bodyText);
+                        String headerType = extractHeaderType(t);
+                        String headerHandle = extractHeaderImageHandle(t);
                         return WhatsappTemplateDto.builder()
                                 .name((String) t.get("name"))
                                 .status((String) t.get("status"))
@@ -189,6 +198,8 @@ public class WhatsAppApiService {
                                 .bodyText(bodyText)
                                 .paramCount(pNames.size())
                                 .paramNames(pNames)
+                                .headerType(headerType)
+                                .headerImageHandle(headerHandle)
                                 .build();
                     })
                     .collect(Collectors.toList());
@@ -206,6 +217,25 @@ public class WhatsAppApiService {
                 .filter(c -> "BODY".equals(c.get("type")))
                 .map(c -> (String) c.get("text"))
                 .findFirst().orElse("");
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractHeaderType(Map<String, Object> template) {
+        List<Map<String, Object>> components = (List<Map<String, Object>>) template.get("components");
+        if (components == null) return null;
+        return components.stream()
+                .filter(c -> "HEADER".equals(c.get("type")))
+                .map(c -> (String) c.get("format"))
+                .findFirst().orElse(null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractHeaderImageHandle(Map<String, Object> template) {
+        List<Map<String, Object>> components = (List<Map<String, Object>>) template.get("components");
+        if (components == null) return null;
+        boolean hasImageHeader = components.stream()
+                .anyMatch(c -> "HEADER".equals(c.get("type")) && "IMAGE".equals(c.get("format")));
+        return hasImageHeader ? IMG_WELCOME : null;
     }
 
     private int countParams(String text) {

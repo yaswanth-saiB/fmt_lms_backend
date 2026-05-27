@@ -151,11 +151,13 @@ public class InboxService {
 
     @Transactional
     public MessageResponse sendTemplate(UUID conversationId, String templateName,
-                                         List<String> parameters, List<String> paramNames, UUID sentByUserId) {
+                                         List<String> parameters, List<String> paramNames,
+                                         String headerImageHandle, UUID sentByUserId) {
         WhatsappConversation conv = findConversation(conversationId);
 
         List<String> names = (paramNames != null && !paramNames.isEmpty()) ? paramNames : null;
-        String waMessageId = whatsAppApiService.sendTemplateMessage(conv.getPhone(), templateName, parameters, names, null);
+        String imgHandle = (headerImageHandle != null && !headerImageHandle.isBlank()) ? headerImageHandle : null;
+        String waMessageId = whatsAppApiService.sendTemplateMessage(conv.getPhone(), templateName, parameters, names, imgHandle);
 
         User sentBy = userRepository.findById(sentByUserId).orElse(null);
         WhatsappMessage msg = WhatsappMessage.builder()
@@ -370,7 +372,8 @@ public class InboxService {
 
     @Transactional
     public void directSend(String phone, String type, String message,
-                            String templateName, List<String> params, List<String> paramNames, UUID sentByUserId) {
+                            String templateName, List<String> params, List<String> paramNames,
+                            String headerImageHandle, UUID sentByUserId) {
         String waPhone = normalizeToWaPhone(phone);
 
         WhatsappConversation conv = conversationRepository.findByPhone(waPhone).orElseGet(() ->
@@ -393,9 +396,10 @@ public class InboxService {
         WaMessageType msgType;
 
         if ("TEMPLATE".equals(type)) {
-            log.info("directSend template: name={} params={} paramNames={}", templateName, params, paramNames);
+            log.info("directSend template: name={} params={} paramNames={} headerHandle={}", templateName, params, paramNames, headerImageHandle);
             List<String> pNames = (paramNames != null && !paramNames.isEmpty()) ? paramNames : null;
-            waId = whatsAppApiService.sendTemplateMessage(waPhone, templateName, params, pNames, null);
+            String imgHandle = (headerImageHandle != null && !headerImageHandle.isBlank()) ? headerImageHandle : null;
+            waId = whatsAppApiService.sendTemplateMessage(waPhone, templateName, params, pNames, imgHandle);
             displayText = "Template: " + templateName;
             msgType = WaMessageType.TEMPLATE;
         } else {
@@ -419,6 +423,11 @@ public class InboxService {
         conv.setLastMessage(displayText.length() > 100 ? displayText.substring(0, 100) : displayText);
         conv.setLastMessageAt(LocalDateTime.now());
         conv.setWindowExpiresAt(LocalDateTime.now().plusHours(24));
+        if ("TEMPLATE".equals(type)) {
+            conv.setChatbotActive(true);
+            conv.setChatbotState(com.fmt.fmt_backend.enums.ChatbotState.MENU_SHOWN);
+            conv.setStatus(ConversationStatus.OPEN);
+        }
         conversationRepository.save(conv);
 
         if (conv.getLead() != null) {
