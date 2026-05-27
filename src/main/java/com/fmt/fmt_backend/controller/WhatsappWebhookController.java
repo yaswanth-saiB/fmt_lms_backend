@@ -171,7 +171,26 @@ public class WhatsappWebhookController {
                     mediaId = message.path("sticker").path("id").asText(null);
                     content = "[Sticker]";
                 }
-                default -> content = "[" + type + " message]";
+                case "reaction" -> {
+                    String emoji = message.path("reaction").path("emoji").asText(null);
+                    content = emoji != null ? "[Reaction: " + emoji + "]" : "[Reaction]";
+                }
+                case "location" -> {
+                    String name = message.path("location").path("name").asText(null);
+                    content = name != null && !name.isBlank() ? "[Location: " + name + "]" : "[Location]";
+                }
+                case "contacts" -> content = "[Contact Shared]";
+                case "unsupported" -> {
+                    JsonNode errors = message.path("errors");
+                    String reason = errors.isArray() && errors.size() > 0
+                            ? errors.get(0).path("title").asText(null) : null;
+                    content = reason != null ? "[Unsupported: " + reason + "]" : "[Unsupported message]";
+                    log.info("Unsupported message from={} payload={}", from, message);
+                }
+                default -> {
+                    content = "[" + type + " message]";
+                    log.info("Unhandled message type={} from={} payload={}", type, from, message);
+                }
             }
 
             log.info("Incoming WhatsApp message: from={} type={}", from, type);
