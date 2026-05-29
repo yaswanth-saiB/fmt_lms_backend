@@ -23,10 +23,12 @@ import java.util.stream.Collectors;
 public class WhatsAppApiService {
 
     private static final String GRAPH_API_BASE = "https://graph.facebook.com/v18.0";
-    private static final String IMG_WELCOME = "1547855303634028";
 
     @Value("${whatsapp.access-token}")
     private String accessToken;
+
+    @Value("${whatsapp.media.img-welcome}")
+    private String imgWelcome;
 
     @Value("${whatsapp.phone-number-id}")
     private String phoneNumberId;
@@ -235,7 +237,7 @@ public class WhatsAppApiService {
         if (components == null) return null;
         boolean hasImageHeader = components.stream()
                 .anyMatch(c -> "HEADER".equals(c.get("type")) && "IMAGE".equals(c.get("format")));
-        return hasImageHeader ? IMG_WELCOME : null;
+        return hasImageHeader ? imgWelcome : null;
     }
 
     private int countParams(String text) {

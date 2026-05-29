@@ -7,6 +7,7 @@ import com.fmt.fmt_backend.enums.*;
 import com.fmt.fmt_backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,10 +28,17 @@ public class ChatbotEngine {
     private final ResendEmailService emailService;
     private final ObjectMapper objectMapper;
 
-    // WhatsApp media handle IDs — uploaded once, reused forever
-    private static final String IMG_WELCOME  = "1547855303634028";
-    private static final String IMG_HIT      = "1196867872476788";
-    private static final String IMG_FOREX    = "799899596475066";
+    @Value("${whatsapp.media.img-welcome}")
+    private String IMG_WELCOME;
+
+    @Value("${whatsapp.media.img-hit}")
+    private String IMG_HIT;
+
+    @Value("${whatsapp.media.img-forex}")
+    private String IMG_FOREX;
+
+    @Value("${whatsapp.media.img-options}")
+    private String IMG_OPTIONS;
 
     @Transactional
     public void processMessage(WhatsappConversation conversation, String content,
@@ -93,24 +101,16 @@ public class ChatbotEngine {
     private void handleCourseSelection(WhatsappConversation conversation, String content, String buttonId) {
         String input = (buttonId != null ? buttonId : content != null ? content : "").trim().toUpperCase();
 
-        if (input.matches("COURSE_HIT|1|HIT|HIT PROGRAM|HIT TRADING")) {
+        if (input.matches("COURSE_HIT|1|HIT|HIT PROGRAM|HIT TRADING|HYBRID|HYBRID INVESTING|HYBRID TRADING")) {
             // Template has its own CTA buttons (Book Free Demo, Know Fee Details, Call Now) — no extra menu
             sendTemplate(conversation, "fmt_hit_program_details", List.of(), IMG_HIT);
             transition(conversation, ChatbotState.MENU_SHOWN);
 
-        } else if (input.matches("COURSE_OPTIONS|2|OPTIONS|OPTIONS TRADING")) {
-            sendText(conversation,
-                    "📈 *Options Trading Program*\n\n" +
-                    "Master professional options strategies for F&O markets.\n\n" +
-                    "✅ Covered Call, Put Spreads, Iron Condor\n" +
-                    "✅ Options Greeks — Delta, Gamma, Theta, Vega\n" +
-                    "✅ Live market trade setups\n\n" +
-                    "📞 Our advisor will contact you with full details and batch schedule!");
-            // Text-only response has no buttons — send interactive menu so user can continue
-            sendMenu(conversation);
+        } else if (input.matches("COURSE_OPTIONS|2|OPTIONS|OPTIONS TRADING|FUTURE|FUTURES|F&O|FNO|FUTURE AND OPTIONS|FUTURE & OPTIONS")) {
+            sendTemplate(conversation, "fmt_options_program_details", List.of(), IMG_OPTIONS);
             transition(conversation, ChatbotState.MENU_SHOWN);
 
-        } else if (input.matches("COURSE_FOREX|3|FOREX|FOREX TRADING")) {
+        } else if (input.matches("COURSE_FOREX|3|FOREX|FOREX TRADING|GLOBAL|FOREX & GLOBAL|FOREX AND GLOBAL")) {
             // Template has its own CTA buttons — no extra menu
             sendTemplate(conversation, "fmt_forex_program_details", List.of(), IMG_FOREX);
             transition(conversation, ChatbotState.MENU_SHOWN);
@@ -321,9 +321,9 @@ public class ChatbotEngine {
     private void sendCourseMenu(WhatsappConversation conversation) {
         sendText(conversation,
                 "📚 *Courses at First Million Trade:*\n\n" +
-                "1️⃣ HIT Trading Program\n" +
-                "2️⃣ Options Trading\n" +
-                "3️⃣ Forex Trading\n\n" +
+                "1️⃣ Hybrid Investing & Trading Program\n" +
+                "2️⃣ Future & Options Trading (option buying & option selling)\n" +
+                "3️⃣ Forex & Global Trading\n\n" +
                 "Reply with the *number* or *course name* to know more!");
     }
 

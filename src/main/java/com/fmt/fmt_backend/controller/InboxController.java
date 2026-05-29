@@ -175,7 +175,7 @@ public class InboxController {
             @Valid @RequestBody com.fmt.fmt_backend.dto.DirectSendRequest req,
             @AuthenticationPrincipal UserDetails userDetails) {
         UUID userId = resolveUserId(userDetails);
-        inboxService.directSend(req.getPhone(), req.getType(), req.getMessage(),
+        inboxService.directSend(req.getPhone(), req.getLeadId(), req.getType(), req.getMessage(),
                 req.getTemplateName(), req.getParams(), req.getParamNames(), req.getHeaderImageHandle(), userId);
         return ResponseEntity.ok(ApiResponse.success("Message sent", null));
     }

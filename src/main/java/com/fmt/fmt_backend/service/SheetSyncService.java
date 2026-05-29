@@ -106,8 +106,7 @@ public class SheetSyncService {
                         continue;
                     }
 
-                    String name = nameIdx != null ? cell(row, nameIdx) : "";
-                    if (name.isBlank()) name = "Unknown";
+                    String name = nameIdx != null ? blank(cell(row, nameIdx)) : null;
 
                     String email    = emailIdx != null ? blank(cell(row, emailIdx)) : null;
                     String platform = platformIdx != null ? cell(row, platformIdx) : null;
@@ -123,7 +122,7 @@ public class SheetSyncService {
                             .phone(phone)
                             .email(email)
                             .source(mapSource(platform))
-                            .status(LeadStatus.NEW)
+                            .status(LeadStatus.IMPORTED)
                             .currentLevel(level)
                             .preferredLearningMode(mode)
                             .preferredTimings(timing)

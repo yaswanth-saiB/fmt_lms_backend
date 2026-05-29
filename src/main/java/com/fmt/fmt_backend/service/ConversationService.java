@@ -92,10 +92,15 @@ public class ConversationService {
             findLeadByPhoneFlexible(from).ifPresent(conversation::setLead);
         }
 
-        // 3b. Backfill lead name if it was previously set to the phone number (unknown)
+        // 3b. Backfill lead name from WhatsApp profile if name is missing, unknown, or was set to phone number
         if (contactName != null && !contactName.isBlank() && conversation.getLead() != null) {
             Lead lead = conversation.getLead();
-            if (lead.getName() == null || lead.getName().equals(from) || lead.getName().equals(from.substring(Math.max(0, from.length() - 10)))) {
+            String existingName = lead.getName();
+            boolean nameIsMissing = existingName == null || existingName.isBlank()
+                    || existingName.equalsIgnoreCase("Unknown")
+                    || existingName.equals(from)
+                    || existingName.equals(from.substring(Math.max(0, from.length() - 10)));
+            if (nameIsMissing) {
                 lead.setName(contactName);
                 leadRepository.save(lead);
                 log.info("Backfilled lead {} name from WhatsApp profile: {}", lead.getId(), contactName);

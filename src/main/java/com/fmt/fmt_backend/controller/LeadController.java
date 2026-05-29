@@ -82,16 +82,20 @@ public class LeadController {
     // ─────────────────────────────────────────────
 
     @GetMapping("/leads")
-    @Operation(summary = "List all leads with optional filters and pagination", description = "Role: ADMIN or SALES. Params: status, stage (ACTIVE|INACTIVE), assignedTo (UUID), search, page, size")
+    @Operation(summary = "List all leads with optional filters and pagination", description = "Role: ADMIN or SALES. Params: status, stage (ACTIVE|INACTIVE), assignedTo (UUID), search, sortBy (updatedAt|lastCallAt|followupDatetime|createdAt), sortDir (asc|desc), followupOverdue, page, size")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getLeads(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String stage,
             @RequestParam(required = false) UUID assignedTo,
             @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "updatedAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir,
+            @RequestParam(defaultValue = "false") boolean followupOverdue,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        ApiResponse<Map<String, Object>> response = leadService.getLeads(status, stage, assignedTo, search, page, size);
+        ApiResponse<Map<String, Object>> response = leadService.getLeads(
+                status, stage, assignedTo, search, sortBy, sortDir, followupOverdue, page, size);
         return ResponseEntity.ok(response);
     }
 

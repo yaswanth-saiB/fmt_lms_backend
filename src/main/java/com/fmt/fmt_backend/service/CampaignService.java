@@ -30,11 +30,9 @@ public class CampaignService {
     private final WhatsappCampaignRecipientRepository recipientRepository;
     private final LeadRepository leadRepository;
     private final UserRepository userRepository;
-    private final WhatsappConversationRepository conversationRepository;
-    private final WhatsappMessageRepository messageRepository;
-    private final LeadActivityRepository leadActivityRepository;
     private final WhatsAppApiService whatsAppApiService;
     private final ObjectMapper objectMapper;
+    private final CampaignLeadSenderService campaignLeadSender;
 
     // ─── Create ──────────────────────────────────────────────────────────────────
 
@@ -118,7 +116,6 @@ public class CampaignService {
 
         List<String> params = deserializeParams(campaign.getTemplateParams());
         List<String> paramNames = deserializeParams(campaign.getTemplateParamNames());
-        User sentBy = userRepository.findById(sentByUserId).orElse(null);
 
         String headerImageHandle = whatsAppApiService.getApprovedTemplates().stream()
                 .filter(t -> campaign.getTemplateName().equals(t.getName()))
@@ -131,58 +128,15 @@ public class CampaignService {
         List<WhatsappCampaignRecipient> recipients = new ArrayList<>();
 
         for (Lead lead : leads) {
-            WhatsappCampaignRecipient.WhatsappCampaignRecipientBuilder rb =
-                    WhatsappCampaignRecipient.builder()
-                            .campaign(campaign)
-                            .lead(lead)
-                            .phone(lead.getPhone())
-                            .leadName(lead.getName());
-            try {
-                List<String> resolved = resolveParams(params, lead);
-                String msgId = whatsAppApiService.sendTemplateMessage(
-                        lead.getPhone(), campaign.getTemplateName(), resolved,
-                        paramNames.isEmpty() ? null : paramNames, headerImageHandle);
-
-                // Record in conversation
-                WhatsappConversation conv = getOrCreateConversation(lead);
-                WhatsappMessage msg = WhatsappMessage.builder()
-                        .conversation(conv)
-                        .whatsappMessageId(msgId)
-                        .direction(MessageDirection.OUTBOUND)
-                        .messageType(WaMessageType.TEMPLATE)
-                        .content("Campaign: " + campaign.getTemplateName())
-                        .templateName(campaign.getTemplateName())
-                        .isBotMessage(false)
-                        .status(WaMessageStatus.SENT)
-                        .sentBy(sentBy)
-                        .sentAt(LocalDateTime.now())
-                        .build();
-                messageRepository.save(msg);
-                conv.setLastMessage("Campaign: " + campaign.getTemplateName());
-                conv.setLastMessageAt(LocalDateTime.now());
-                conv.setChatbotActive(true);
-                conv.setChatbotState(com.fmt.fmt_backend.enums.ChatbotState.MENU_SHOWN);
-                conv.setStatus(ConversationStatus.OPEN);
-                conversationRepository.save(conv);
-
-                leadActivityRepository.save(LeadActivity.builder()
-                        .lead(lead)
-                        .activityType(ActivityType.WHATSAPP_CAMPAIGN)
-                        .description("Campaign sent: " + campaign.getName())
-                        .createdBy(sentBy)
-                        .build());
-
-                rb.waMessageId(msgId).failed(false).sentAt(LocalDateTime.now());
-                success++;
-            } catch (Exception e) {
-                log.warn("Campaign send failed for lead {}: {}", lead.getId(), e.getMessage());
-                rb.failed(true).errorMessage(truncate(e.getMessage(), 490));
-                failed++;
-            }
-            recipients.add(rb.build());
+            List<String> resolved = resolveParams(params, lead);
+            // Each lead runs in its own REQUIRES_NEW transaction so it commits immediately.
+            // Webhooks can find the conversation/message as soon as this call returns.
+            // Passing IDs (not entities) so the inner transaction loads managed instances — avoids detached-entity errors.
+            WhatsappCampaignRecipient r = campaignLeadSender.sendToLead(
+                    campaignId, lead.getId(), resolved, paramNames, headerImageHandle, sentByUserId);
+            recipients.add(r);
+            if (Boolean.TRUE.equals(r.getFailed())) failed++; else success++;
         }
-
-        recipientRepository.saveAll(recipients);
 
         campaign.setSuccessCount(success);
         campaign.setFailCount(failed);
@@ -227,21 +181,16 @@ public class CampaignService {
         return spec;
     }
 
-    private WhatsappConversation getOrCreateConversation(Lead lead) {
-        return conversationRepository.findByPhone(lead.getPhone()).orElseGet(() ->
-                conversationRepository.save(WhatsappConversation.builder()
-                        .phone(lead.getPhone())
-                        .lead(lead)
-                        .entryPoint(ConversationEntryPoint.CAMPAIGN)
-                        .chatbotActive(false)
-                        .status(ConversationStatus.OPEN)
-                        .build()));
-    }
-
     private List<String> resolveParams(List<String> params, Lead lead) {
         if (params == null) return List.of();
+        String name = lead.getName();
+        if (name == null || name.isBlank() || name.equalsIgnoreCase("Unknown")) {
+            // Fall back to phone so Meta never receives an empty text parameter
+            name = lead.getPhone() != null ? lead.getPhone() : "Customer";
+        }
+        final String resolvedName = name;
         return params.stream()
-                .map(p -> p.replace("{{name}}", lead.getName() != null ? lead.getName() : ""))
+                .map(p -> p.replace("{{name}}", resolvedName))
                 .collect(Collectors.toList());
     }
 

@@ -95,8 +95,7 @@ public class ExcelImportService {
                         continue;
                     }
 
-                    String name = nameIdx != null ? getCellValue(row, nameIdx) : "Unknown";
-                    if (name.isBlank()) name = "Unknown";
+                    String name = nameIdx != null ? nullIfBlank(getCellValue(row, nameIdx)) : null;
 
                     String email       = emailIdx != null ? getCellValue(row, emailIdx) : null;
                     String platform    = platformIdx != null ? getCellValue(row, platformIdx) : null;
@@ -111,7 +110,7 @@ public class ExcelImportService {
                             .email(nullIfBlank(email))
                             .courseInterest(nullIfBlank(course))
                             .source(mapPlatformToSource(platform))
-                            .status(LeadStatus.NEW)
+                            .status(LeadStatus.IMPORTED)
                             .currentLevel(nullIfBlank(level))
                             .preferredLearningMode(nullIfBlank(mode))
                             .notes(nullIfBlank(comment))

@@ -28,6 +28,7 @@ public class InboxService {
     private final WhatsappConversationRepository conversationRepository;
     private final WhatsappMessageRepository messageRepository;
     private final UserRepository userRepository;
+    private final LeadRepository leadRepository;
     private final LeadActivityRepository leadActivityRepository;
     private final WhatsAppApiService whatsAppApiService;
     private final ConversationNoteRepository noteRepository;
@@ -81,7 +82,7 @@ public class InboxService {
                         ? conv.getAssignedTo().getFirstName() + " " + conv.getAssignedTo().getLastName() : null)
                 .labels(conv.getLabels())
                 .leadId(lead != null ? lead.getId() : null)
-                .leadName(lead != null ? lead.getName() : conv.getPhone())
+                .leadName((lead != null && lead.getName() != null && !lead.getName().isBlank()) ? lead.getName() : conv.getPhone())
                 .phone(conv.getPhone())
                 .leadStatus(lead != null ? lead.getStatus() : null)
                 .courseInterest(lead != null ? lead.getCourseInterest() : null)
@@ -312,7 +313,7 @@ public class InboxService {
         return ConversationSummaryResponse.builder()
                 .id(c.getId())
                 .leadId(lead != null ? lead.getId() : null)
-                .leadName(lead != null ? lead.getName() : c.getPhone())
+                .leadName((lead != null && lead.getName() != null && !lead.getName().isBlank()) ? lead.getName() : c.getPhone())
                 .phone(c.getPhone())
                 .status(c.getStatus())
                 .lastMessage(c.getLastMessage())
@@ -371,17 +372,24 @@ public class InboxService {
     // ── Direct send to lead (from lead page) ──────────────────────────────────
 
     @Transactional
-    public void directSend(String phone, String type, String message,
+    public void directSend(String phone, UUID leadId, String type, String message,
                             String templateName, List<String> params, List<String> paramNames,
                             String headerImageHandle, UUID sentByUserId) {
         String waPhone = normalizeToWaPhone(phone);
 
+        Lead linkedLead = (leadId != null) ? leadRepository.findById(leadId).orElse(null) : null;
+
         WhatsappConversation conv = conversationRepository.findByPhone(waPhone).orElseGet(() ->
                 conversationRepository.save(WhatsappConversation.builder()
                         .phone(waPhone)
+                        .lead(linkedLead)
                         .entryPoint(ConversationEntryPoint.MANUAL)
                         .chatbotActive(false)
                         .build()));
+
+        if (conv.getLead() == null && linkedLead != null) {
+            conv.setLead(linkedLead);
+        }
 
         if ("TEXT".equals(type)) {
             if (conv.getWindowExpiresAt() == null || conv.getWindowExpiresAt().isBefore(LocalDateTime.now())) {

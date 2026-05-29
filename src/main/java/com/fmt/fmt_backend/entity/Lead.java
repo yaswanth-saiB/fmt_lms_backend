@@ -25,7 +25,7 @@ public class Lead extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "name", nullable = false, length = 100)
+    @Column(name = "name", nullable = true, length = 100)
     private String name;
 
     @Column(name = "phone", nullable = false, length = 20, unique = true)

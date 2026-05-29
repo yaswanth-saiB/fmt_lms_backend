@@ -17,5 +17,7 @@ public enum LeadStatus {
     CLOSING,
     PAYMENT_DONE,
     NOT_INTERESTED,
-    SWITCH_OFF
+    SWITCH_OFF,
+    IMPORTED,
+    CAMPAIGN_SENT
 }

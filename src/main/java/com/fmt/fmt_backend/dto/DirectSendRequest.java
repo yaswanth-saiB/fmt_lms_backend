@@ -11,6 +11,8 @@ public class DirectSendRequest {
     @NotBlank
     private String phone;
 
+    private java.util.UUID leadId; // optional — links conversation to lead when provided
+
     /** TEXT or TEMPLATE */
     @NotBlank
     private String type;

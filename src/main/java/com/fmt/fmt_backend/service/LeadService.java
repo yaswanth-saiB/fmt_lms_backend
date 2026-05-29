@@ -42,7 +42,8 @@ public class LeadService {
 
     // Terminal statuses — excluded from aging/stale/active counts
     private static final List<LeadStatus> TERMINAL_STATUSES = List.of(
-            LeadStatus.PAYMENT_DONE, LeadStatus.NOT_INTERESTED, LeadStatus.SWITCH_OFF);
+            LeadStatus.PAYMENT_DONE, LeadStatus.NOT_INTERESTED, LeadStatus.SWITCH_OFF,
+            LeadStatus.IMPORTED, LeadStatus.CAMPAIGN_SENT);
 
     private static final List<LeadStatus> ACTIVE_STATUSES = List.of(
             LeadStatus.NEW, LeadStatus.DNP_1, LeadStatus.DNP_2, LeadStatus.DNP_3,
@@ -100,7 +101,9 @@ public class LeadService {
 
     @Transactional(readOnly = true)
     public ApiResponse<Map<String, Object>> getLeads(
-            String status, String stage, UUID assignedTo, String search, int page, int size) {
+            String status, String stage, UUID assignedTo, String search,
+            String sortBy, String sortDir, boolean followupOverdue,
+            int page, int size) {
 
         Specification<Lead> spec = (root, query, cb) -> cb.conjunction();
 
@@ -125,8 +128,19 @@ public class LeadService {
                     cb.like(root.get("phone"), "%" + search + "%")
             ));
         }
+        if (followupOverdue) {
+            LocalDateTime now = LocalDateTime.now();
+            spec = spec.and((root, query, cb) -> cb.and(
+                    cb.isNotNull(root.get("followupDatetime")),
+                    cb.lessThan(root.get("followupDatetime"), now)
+            ));
+            // Scope to active statuses when no explicit status/stage filter applied
+            if (statusEnum == null && (stage == null || stage.isBlank())) {
+                spec = spec.and((root, query, cb) -> root.get("status").in(ACTIVE_STATUSES));
+            }
+        }
 
-        PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "updatedAt"));
+        PageRequest pageable = PageRequest.of(page, size, buildSort(sortBy));
         Page<Lead> leadsPage = leadRepository.findAll(spec, pageable);
 
         List<LeadSummaryResponse> content = leadsPage.getContent()
@@ -140,6 +154,15 @@ public class LeadService {
         result.put("totalPages", leadsPage.getTotalPages());
         result.put("currentPage", page);
         return ApiResponse.success("Leads retrieved", result);
+    }
+
+    private Sort buildSort(String sortBy) {
+        return switch (sortBy != null ? sortBy : "updatedAt") {
+            case "lastCallAt" -> Sort.by(Sort.Order.asc("lastCallAt").with(Sort.NullHandling.NULLS_FIRST));
+            case "followupDatetime" -> Sort.by(Sort.Order.asc("followupDatetime").with(Sort.NullHandling.NULLS_LAST));
+            case "createdAt" -> Sort.by(Sort.Order.asc("createdAt"));
+            default -> Sort.by(Sort.Direction.DESC, "updatedAt");
+        };
     }
 
     // ─────────────────────────────────────────────
@@ -625,7 +648,14 @@ public class LeadService {
         }
 
         // Cascade: conversations (messages, notes, chatbot sessions) → campaign recipients → activities → payments → lead
-        List<WhatsappConversation> conversations = whatsappConversationRepository.findByLead(lead);
+        Set<WhatsappConversation> conversations = new java.util.LinkedHashSet<>(whatsappConversationRepository.findByLead(lead));
+        // Also catch orphaned conversations by phone (directSend creates conversations without lead FK)
+        if (lead.getPhone() != null) {
+            String phone10 = lead.getPhone().replaceAll("[\\s\\-\\(\\)\\+]", "");
+            String phone12 = phone10.length() == 10 ? "91" + phone10 : phone10;
+            whatsappConversationRepository.findByPhone(phone10).ifPresent(conversations::add);
+            whatsappConversationRepository.findByPhone(phone12).ifPresent(conversations::add);
+        }
         for (WhatsappConversation conv : conversations) {
             whatsappMessageRepository.deleteByConversation(conv);
             conversationNoteRepository.deleteByConversation(conv);
