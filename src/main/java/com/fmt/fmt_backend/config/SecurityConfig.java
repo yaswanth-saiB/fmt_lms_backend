@@ -137,7 +137,10 @@ public class SecurityConfig {
                 "https://www.firstmilliontrade.com",       // Home page (www)
                 "https://app.firstmilliontrade.com",       // Login/signup app
                 "https://www.app.firstmilliontrade.com",   // Login/signup app (www)
-                "https://api.firstmilliontrade.com"        // Backend self-reference
+                "https://api.firstmilliontrade.com",       // Backend self-reference (prod)
+                "https://dev.firstmilliontrade.com",       // Dev frontend
+                "https://www.dev.firstmilliontrade.com",   // Dev frontend (www)
+                "https://dev-api.firstmilliontrade.com"    // Backend self-reference (dev)
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList(
