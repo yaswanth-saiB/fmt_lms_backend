@@ -212,6 +212,33 @@ public class ResendEmailService {
     }
 
     @Async
+    public void sendSeatReservationAlert(String leadName, String phone) {
+        SenderInfo sender = senderMap.get(EmailType.PROMO);
+        String html = String.format("""
+            <!DOCTYPE html>
+            <html>
+            <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0;">
+                <div style="max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 8px; padding: 40px; border-left: 4px solid #d97706;">
+                    <h2 style="color: #d97706; margin-top: 0;">🎯 HOT LEAD — Seat Reserved via Campaign</h2>
+                    <p style="color: #555;">A lead has clicked <strong>"Reserve My Seat"</strong> on a WhatsApp campaign template. They are showing strong intent to enroll. <strong style="color: #d97706;">Reach out within 5 minutes</strong> to confirm the seat and share payment details.</p>
+                    <table style="width: 100%%; border-collapse: collapse; margin: 24px 0;">
+                        <tr><td style="padding: 10px 8px; color: #888; width: 130px;">Lead Name</td><td style="padding: 10px 8px; font-weight: bold;">%s</td></tr>
+                        <tr style="background:#f9f9f9"><td style="padding: 10px 8px; color: #888;">Phone</td><td style="padding: 10px 8px; font-weight: bold;">%s</td></tr>
+                    </table>
+                    <p style="color: #555; font-size: 14px;">View the conversation in the inbox and call them now.</p>
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
+                    <p style="font-size: 12px; color: #999;">Automated alert — First Million Trade Campaign Reply</p>
+                </div>
+            </body>
+            </html>
+            """,
+            nvl(leadName), nvl(phone)
+        );
+        sendEmail(properties.getAdminEmail(), "🎯 HOT LEAD — Reserved Seat — " + nvl(leadName) + " (" + nvl(phone) + ")",
+                html, sender, EmailType.PROMO);
+    }
+
+    @Async
     public void sendEnquiryFailureAlert(com.fmt.fmt_backend.dto.EnquiryRequest request, String ipAddress, String error) {
         SenderInfo sender = senderMap.get(EmailType.ADMIN);
         String html = String.format("""

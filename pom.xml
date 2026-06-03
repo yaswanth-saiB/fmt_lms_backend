@@ -112,6 +112,12 @@
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
 			<version>${springdoc.version}</version>
 		</dependency>
+		<!-- SpringDoc 2.x has a runtime dep on Kotlin reflection even for Java-only
+		     projects. Without this, /v3/api-docs throws NoClassDefFoundError. -->
+		<dependency>
+			<groupId>org.jetbrains.kotlin</groupId>
+			<artifactId>kotlin-reflect</artifactId>
+		</dependency>
 		<!-- Caching — Spring abstraction + Caffeine in-memory impl -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

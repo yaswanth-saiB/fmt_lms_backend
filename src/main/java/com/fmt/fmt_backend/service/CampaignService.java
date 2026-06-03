@@ -153,13 +153,30 @@ public class CampaignService {
     // ─── Delete ───────────────────────────────────────────────────────────────────
 
     @Transactional
-    public void deleteCampaign(UUID campaignId) {
+    public void deleteCampaign(UUID campaignId, boolean isAdmin) {
         WhatsappCampaign campaign = findCampaign(campaignId);
+        CampaignStatus status = campaign.getStatus();
+
+        // Never allow deletion of an in-flight campaign — would leave inconsistent state.
+        if (status == CampaignStatus.SENDING) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Cannot delete a campaign while it's actively being sent");
+        }
+
+        // SALES: only DRAFT and FAILED (low-stakes states with no successful sends).
+        // ADMIN: any non-SENDING status — including SENT and PARTIAL_FAIL.
+        //        Use case: deleting small test campaigns after verifying delivery.
+        if (!isAdmin && status != CampaignStatus.DRAFT && status != CampaignStatus.FAILED) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only admins can delete a " + status + " campaign");
+        }
+
         // Delete recipients first (FK constraint), then the campaign
         List<WhatsappCampaignRecipient> recipients = recipientRepository.findByCampaignOrderBySentAtDesc(campaign);
         recipientRepository.deleteAll(recipients);
         campaignRepository.delete(campaign);
-        log.info("Campaign {} ({}) deleted", campaign.getName(), campaignId);
+        log.info("Campaign {} ({}, status={}) deleted by {}",
+                campaign.getName(), campaignId, status, isAdmin ? "ADMIN" : "SALES");
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────────

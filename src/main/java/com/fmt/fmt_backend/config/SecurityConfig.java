@@ -95,6 +95,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/me").authenticated()
                         .requestMatchers("/api/auth/change-password").authenticated()
                         .requestMatchers("/api/auth/token/**").authenticated()
+                        // Campaigns — ADMIN or SALES (declared BEFORE /api/admin/** so the more
+                        // specific matcher takes precedence; Spring Security uses first-match-wins).
+                        .requestMatchers("/api/admin/campaigns/**").hasAnyRole("ADMIN", "SALES")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/mentor/**").hasRole("MENTOR")
                         .requestMatchers("/api/student/**").hasRole("STUDENT")

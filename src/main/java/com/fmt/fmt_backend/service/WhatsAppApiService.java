@@ -30,6 +30,18 @@ public class WhatsAppApiService {
     @Value("${whatsapp.media.img-welcome}")
     private String imgWelcome;
 
+    @Value("${whatsapp.media.img-hit:}")
+    private String imgHit;
+
+    @Value("${whatsapp.media.img-forex:}")
+    private String imgForex;
+
+    @Value("${whatsapp.media.img-options:}")
+    private String imgOptions;
+
+    @Value("${whatsapp.media.img-june-batch:}")
+    private String imgJuneBatch;
+
     @Value("${whatsapp.phone-number-id}")
     private String phoneNumberId;
 
@@ -237,7 +249,41 @@ public class WhatsAppApiService {
         if (components == null) return null;
         boolean hasImageHeader = components.stream()
                 .anyMatch(c -> "HEADER".equals(c.get("type")) && "IMAGE".equals(c.get("format")));
-        return hasImageHeader ? imgWelcome : null;
+        if (!hasImageHeader) return null;
+
+        // Per-template media-id map. Each value is a stable WhatsApp media ID
+        // (uploaded via POST /{phone-id}/media), NOT Meta's example.header_handle
+        // CDN URL which has expiring auth tokens and can't be used at send time.
+        //
+        // To add a new template image:
+        //   1. Upload the image via Postman to POST /{phone-id}/media → copy "id"
+        //   2. Add the media id to /home/ubuntu/.env as a new WHATSAPP_IMG_* var
+        //   3. Add a matching @Value field above + entry to this map
+        //   4. Restart fmt-backend
+        //
+        // Refactor planned to make this DB-driven + admin UI — see memory
+        // [[template_image_config_refactor]] (trigger: "refactor template images").
+        String name = (String) template.get("name");
+        String mediaId = imageIdForTemplate(name);
+        if (mediaId == null || mediaId.isBlank()) {
+            log.warn("Template '{}' has IMAGE header but no media id configured — falling back to imgWelcome. " +
+                     "Add a WHATSAPP_IMG_* env var + map entry in WhatsAppApiService.imageIdForTemplate().", name);
+            return imgWelcome;
+        }
+        return mediaId;
+    }
+
+    /** Returns the configured media id for a template name, or null if none configured. */
+    private String imageIdForTemplate(String templateName) {
+        if (templateName == null) return null;
+        return switch (templateName) {
+            case "fmt_click_wa_welcome", "fmt_demo_booking_confirm" -> imgWelcome;
+            case "fmt_hit_program_details"                          -> imgHit;
+            case "fmt_forex_program_details"                        -> imgForex;
+            case "fmt_options_program_details"                      -> imgOptions;
+            case "fmt_june_batch_campaign_hit"                      -> imgJuneBatch;
+            default                                                  -> null;
+        };
     }
 
     private int countParams(String text) {

@@ -47,7 +47,7 @@ public class ChatbotEngine {
         log.info("Bot processing: conv={} state={} buttonId={}", conversation.getId(), state, buttonId);
 
         switch (state) {
-            case INITIAL, INITIAL_LEAD_GEN -> handleInitial(conversation);
+            case INITIAL, INITIAL_LEAD_GEN -> handleInitial(conversation, content, buttonId);
             case MENU_SHOWN -> handleMenuShown(conversation, content, buttonId);
             case COURSE_SELECTION -> handleCourseSelection(conversation, content, buttonId);
             case DEMO_DATE_ASKED -> handleDemoDateAsked(conversation, content, buttonId);
@@ -64,12 +64,27 @@ public class ChatbotEngine {
 
     // ─── State Handlers ──────────────────────────────────────────────────────────
 
-    private void handleInitial(WhatsappConversation conversation) {
+    private void handleInitial(WhatsappConversation conversation, String content, String buttonId) {
+        // If the lead came in via a campaign template and clicked a known action button,
+        // route through MENU_SHOWN logic — no need to send the welcome template.
+        if (buttonId != null && !buttonId.isBlank()) {
+            String trigger = normalizeMenuTrigger(buttonId);
+            if (KNOWN_MENU_TRIGGERS.contains(trigger)) {
+                transition(conversation, ChatbotState.MENU_SHOWN);
+                handleMenuShown(conversation, content, buttonId);
+                return;
+            }
+        }
+        // Default: send welcome template (organic inbound, no recognized button)
         String name = leadName(conversation);
-        // Template already has 3 quick-reply buttons — no separate menu needed
         sendTemplate(conversation, "fmt_click_wa_welcome", List.of(name), List.of("customer_name"), IMG_WELCOME);
         transition(conversation, ChatbotState.MENU_SHOWN);
     }
+
+    // Triggers that handleMenuShown knows how to handle — used by handleInitial
+    // to decide whether to route a campaign button click through MENU_SHOWN logic.
+    private static final Set<String> KNOWN_MENU_TRIGGERS = Set.of(
+            "MENU_COURSES", "MENU_DEMO", "MENU_FEE", "MENU_RESERVE", "TALK_HUMAN", "ESCALATED");
 
     private void handleMenuShown(WhatsappConversation conversation, String content, String buttonId) {
         // normalizeMenuTrigger maps both our MENU_ IDs and template quick-reply button payloads
@@ -93,6 +108,7 @@ public class ChatbotEngine {
                         "📞 Or call us directly: *+91 90320 46008*");
                 escalate(conversation);
             }
+            case "MENU_RESERVE" -> reserveSeat(conversation);
             case "TALK_HUMAN", "ESCALATED" -> escalate(conversation);
             default -> handleUnknown(conversation, content);
         }
@@ -227,6 +243,58 @@ public class ChatbotEngine {
         conversation.setStatus(ConversationStatus.NEEDS_HUMAN);
         log.info("Demo booked via chatbot: conv={} date={} mode={} time={}", conversation.getId(), date, mode, time);
     }
+
+    // ─── Seat Reservation (campaign button "Reserve My Seat") ───────────────────
+
+    private void reserveSeat(WhatsappConversation conversation) {
+        String name = leadName(conversation);
+
+        // 1. Send WhatsApp confirmation to the lead
+        sendText(conversation,
+                "🎯 Awesome choice, " + name + "!\n\n" +
+                "Your seat in the *HIT June Batch* is noted. Our team will contact you within 5 minutes to confirm your seat and share the payment details.\n\n" +
+                "Get ready to start your trading journey! 🚀\n\n" +
+                "📞 Or call us directly: *+91 90320 46008*");
+
+        // 2. Fire admin email alert FIRST — if DB save later throws, alert still fired.
+        //    Same ordering pattern as confirmDemoBooking().
+        try {
+            emailService.sendSeatReservationAlert(name, conversation.getPhone());
+        } catch (Exception e) {
+            log.warn("Failed to send seat reservation email alert: {}", e.getMessage());
+        }
+
+        // 3. Update lead status to CONTACTED if currently in pre-contact stage.
+        //    Don't downgrade leads already deeper in pipeline (FOLLOWUP_SCHEDULED+).
+        Lead lead = conversation.getLead();
+        if (lead != null) {
+            LeadStatus current = lead.getStatus();
+            if (current == null || PRE_CONTACT_STATUSES.contains(current)) {
+                lead.setStatus(LeadStatus.CONTACTED);
+            }
+            leadRepository.save(lead);
+
+            leadActivityRepository.save(LeadActivity.builder()
+                    .lead(lead)
+                    .activityType(ActivityType.WHATSAPP_BOT_REPLIED)
+                    .description("Reserved seat via campaign — escalated to sales for payment")
+                    .build());
+        }
+
+        // 4. Escalate — sales team takes over from here
+        conversation.setChatbotActive(false);
+        conversation.setStatus(ConversationStatus.NEEDS_HUMAN);
+        transition(conversation, ChatbotState.ESCALATED);
+        log.info("Seat reservation via chatbot: conv={} lead={}", conversation.getId(), name);
+    }
+
+    // Lead statuses that should be upgraded to CONTACTED when lead clicks "Reserve My Seat".
+    // Anything beyond CONTACTED is left as-is (don't regress active sales conversations).
+    private static final Set<LeadStatus> PRE_CONTACT_STATUSES = Set.of(
+            LeadStatus.NEW, LeadStatus.WHATSAPP_SENT, LeadStatus.WHATSAPP_RESPONDED,
+            LeadStatus.IMPORTED, LeadStatus.CAMPAIGN_SENT,
+            LeadStatus.DNP_1, LeadStatus.DNP_2, LeadStatus.DNP_3,
+            LeadStatus.DNP_4, LeadStatus.DNP_5);
 
     // ─── Unknown / Fallback ──────────────────────────────────────────────────────
 
@@ -476,7 +544,8 @@ public class ChatbotEngine {
             case "OUR COURSES", "COURSES", "VIEW COURSES" -> "MENU_COURSES";
             case "FREE DEMO CLASS", "BOOK FREE DEMO", "BOOK DEMO", "BOOK A DEMO", "DEMO", "BOOK DEMO NOW" -> "MENU_DEMO";
             case "KNOW FEE DETAILS", "FEE INFO", "ABOUT FEES", "FEES", "FEE" -> "MENU_FEE";
-            case "TALK TO US", "TALK TO TEAM", "CONTACT US", "TALK", "CALL NOW", "CALL US", "CALL US TODAY" -> "TALK_HUMAN";
+            case "TALK TO US", "TALK TO TEAM", "CONTACT US", "TALK", "CALL NOW", "CALL US", "CALL US TODAY", "CALL US NOW" -> "TALK_HUMAN";
+            case "RESERVE MY SEAT", "RESERVE SEAT", "RESERVE_MY_SEAT", "RESERVE_SEAT", "RESERVE", "BOOK MY SEAT" -> "MENU_RESERVE";
             default -> upper;
         };
     }

@@ -61,9 +61,13 @@ public class CampaignController {
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "Delete a DRAFT campaign")
-    public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
-        campaignService.deleteCampaign(id);
+    @Operation(summary = "Delete a campaign. SALES: DRAFT/FAILED only. ADMIN: any except SENDING.")
+    public ResponseEntity<ApiResponse<Void>> delete(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserDetails principal) {
+        boolean isAdmin = principal.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+        campaignService.deleteCampaign(id, isAdmin);
         return ResponseEntity.ok(ApiResponse.success("Campaign deleted"));
     }
 
