@@ -1,6 +1,8 @@
 package com.fmt.fmt_backend.service;
 
 import com.fmt.fmt_backend.dto.WhatsappTemplateDto;
+import com.fmt.fmt_backend.service.WhatsappTemplateConfigService.HeaderResolution;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
@@ -13,6 +15,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -20,7 +23,10 @@ import java.util.stream.Collectors;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class WhatsAppApiService {
+
+    private final WhatsappTemplateConfigService templateConfigService;
 
     private static final String GRAPH_API_BASE = "https://graph.facebook.com/v18.0";
 
@@ -75,9 +81,17 @@ public class WhatsAppApiService {
     }
 
     /**
-     * Full overload: supports named template variables (parameter_name) and image header.
-     * paramNames: parallel list to params — if index i has a non-null name, adds "parameter_name" to that param.
-     *             Pass null or empty list for positional variables ({{1}}, {{2}}).
+     * Full overload: supports named template variables (parameter_name) and media headers.
+     *
+     * Media resolution rules:
+     *   - If caller passes non-null headerImageId, it's treated as an IMAGE-type header
+     *     (backward compat with existing call sites that hardcode image media ids).
+     *   - If caller passes null, we look up DB (WhatsappTemplateConfig) by template name.
+     *     DB has both the media id AND the type (IMAGE / VIDEO / DOCUMENT), so video templates
+     *     get sent with `video.id` correctly.
+     *
+     * paramNames: parallel list to params — if index i has a non-null name, adds "parameter_name"
+     *             to that param. Pass null/empty for positional variables ({{1}}, {{2}}).
      */
     public String sendTemplateMessage(String phone, String templateName, List<String> params,
                                        List<String> paramNames, String headerImageId) {
@@ -92,17 +106,37 @@ public class WhatsAppApiService {
 
         List<Map<String, Object>> components = new ArrayList<>();
 
-        if (headerImageId != null && !headerImageId.isBlank()) {
-            Map<String, Object> imageParam = new HashMap<>();
-            if (headerImageId.startsWith("http")) {
-                imageParam.put("link", headerImageId);
-            } else {
-                imageParam.put("id", headerImageId);
+        // Resolve media id + type.
+        //   1. If caller passed explicit headerImageId, use that — but STILL look up DB to
+        //      learn the type (otherwise video templates ship as image and Meta rejects).
+        //   2. If caller passed null, full DB lookup for both id and type.
+        //   3. Default type is "image" for backward compat with legacy callers that
+        //      pre-date the DB config table.
+        String resolvedMediaId = headerImageId;
+        String resolvedMediaType = "image";
+        Optional<HeaderResolution> dbHeader = templateConfigService.findHeaderForTemplate(templateName);
+        if (dbHeader.isPresent()) {
+            // Always prefer DB's type knowledge even when caller passed an explicit id
+            String t = dbHeader.get().mediaType();
+            if (t != null) resolvedMediaType = t.toLowerCase(); // image / video / document
+            if (resolvedMediaId == null || resolvedMediaId.isBlank()) {
+                resolvedMediaId = dbHeader.get().mediaId();
             }
+        }
+
+        if (resolvedMediaId != null && !resolvedMediaId.isBlank()) {
+            Map<String, Object> mediaParam = new HashMap<>();
+            if (resolvedMediaId.startsWith("http")) {
+                mediaParam.put("link", resolvedMediaId);
+            } else {
+                mediaParam.put("id", resolvedMediaId);
+            }
+            // For VIDEO/DOCUMENT headers the JSON key changes — Meta expects e.g.
+            // { "type": "video", "video": { "id": "..." } } not "image".
             Map<String, Object> headerComp = new HashMap<>();
             headerComp.put("type", "header");
             headerComp.put("parameters", List.of(
-                    Map.of("type", "image", "image", imageParam)
+                    Map.of("type", resolvedMediaType, resolvedMediaType, mediaParam)
             ));
             components.add(headerComp);
         }
@@ -204,6 +238,7 @@ public class WhatsAppApiService {
                         List<String> pNames = extractParamNames(bodyText);
                         String headerType = extractHeaderType(t);
                         String headerHandle = extractHeaderImageHandle(t);
+                        List<String> buttonTexts = extractButtonTexts(t);
                         return WhatsappTemplateDto.builder()
                                 .name((String) t.get("name"))
                                 .status((String) t.get("status"))
@@ -214,6 +249,7 @@ public class WhatsAppApiService {
                                 .paramNames(pNames)
                                 .headerType(headerType)
                                 .headerImageHandle(headerHandle)
+                                .buttonTexts(buttonTexts)
                                 .build();
                     })
                     .collect(Collectors.toList());
@@ -247,6 +283,20 @@ public class WhatsAppApiService {
     private String extractHeaderImageHandle(Map<String, Object> template) {
         List<Map<String, Object>> components = (List<Map<String, Object>>) template.get("components");
         if (components == null) return null;
+        boolean hasMediaHeader = components.stream()
+                .anyMatch(c -> "HEADER".equals(c.get("type")) &&
+                        ("IMAGE".equals(c.get("format")) || "VIDEO".equals(c.get("format")) || "DOCUMENT".equals(c.get("format"))));
+        if (!hasMediaHeader) return null;
+
+        String templateName = (String) template.get("name");
+
+        // Primary source — DB config (managed via /admin/whatsapp-templates UI)
+        Optional<String> dbMediaId = templateConfigService.findHeaderMediaIdForTemplate(templateName);
+        if (dbMediaId.isPresent() && !dbMediaId.get().isBlank()) {
+            return dbMediaId.get();
+        }
+        // Legacy fallback — hardcoded env-var map (kept for backward compat during migration)
+        // gated by hasImageHeader so we don't return image ids for video/doc templates
         boolean hasImageHeader = components.stream()
                 .anyMatch(c -> "HEADER".equals(c.get("type")) && "IMAGE".equals(c.get("format")));
         if (!hasImageHeader) return null;
@@ -284,6 +334,27 @@ public class WhatsAppApiService {
             case "fmt_june_batch_campaign_hit"                      -> imgJuneBatch;
             default                                                  -> null;
         };
+    }
+
+    /**
+     * Extracts QUICK_REPLY button labels in order from a template's BUTTONS component.
+     * For URL / PHONE_NUMBER buttons we only include the visible text — they don't
+     * deliver webhook payloads when clicked, so they're irrelevant for action mapping,
+     * but admins still see them in the UI for context.
+     */
+    @SuppressWarnings("unchecked")
+    private List<String> extractButtonTexts(Map<String, Object> template) {
+        List<Map<String, Object>> components = (List<Map<String, Object>>) template.get("components");
+        if (components == null) return Collections.emptyList();
+        return components.stream()
+                .filter(c -> "BUTTONS".equals(c.get("type")))
+                .findFirst()
+                .map(c -> (List<Map<String, Object>>) c.get("buttons"))
+                .orElse(Collections.emptyList())
+                .stream()
+                .map(b -> (String) b.get("text"))
+                .filter(s -> s != null && !s.isBlank())
+                .collect(Collectors.toList());
     }
 
     private int countParams(String text) {

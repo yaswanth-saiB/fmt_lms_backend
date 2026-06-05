@@ -2,6 +2,7 @@ package com.fmt.fmt_backend.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fmt.fmt_backend.dto.TemplateButtonDto;
 import com.fmt.fmt_backend.entity.*;
 import com.fmt.fmt_backend.enums.*;
 import com.fmt.fmt_backend.repository.*;
@@ -27,6 +28,8 @@ public class ChatbotEngine {
     private final WhatsAppApiService whatsAppApiService;
     private final ResendEmailService emailService;
     private final ObjectMapper objectMapper;
+    private final WhatsappTemplateConfigService templateConfigService;
+    private final ButtonActionExecutor buttonActionExecutor;
 
     @Value("${whatsapp.media.img-welcome}")
     private String IMG_WELCOME;
@@ -45,6 +48,23 @@ public class ChatbotEngine {
                                 String buttonId, String buttonTitle) {
         ChatbotState state = conversation.getChatbotState();
         log.info("Bot processing: conv={} state={} buttonId={}", conversation.getId(), state, buttonId);
+
+        // DB-driven button action — admin-configurable via /admin/whatsapp-templates.
+        // Takes precedence over the legacy state-based handlers below, so a brand new
+        // campaign template's button works the moment it's saved in the UI — no code change.
+        // If no DB action exists for this payload, we fall through to legacy logic.
+        if (buttonId != null && !buttonId.isBlank()) {
+            Optional<TemplateButtonDto> dbAction = templateConfigService.findActionForButtonPayload(buttonId);
+            if (dbAction.isEmpty() && buttonTitle != null && !buttonTitle.isBlank()
+                    && !buttonTitle.equals(buttonId)) {
+                dbAction = templateConfigService.findActionForButtonPayload(buttonTitle);
+            }
+            if (dbAction.isPresent()) {
+                buttonActionExecutor.execute(conversation, dbAction.get());
+                updateSession(conversation);
+                return;
+            }
+        }
 
         switch (state) {
             case INITIAL, INITIAL_LEAD_GEN -> handleInitial(conversation, content, buttonId);

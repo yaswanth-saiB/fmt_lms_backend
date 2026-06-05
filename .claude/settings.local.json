@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(./mvnw.cmd clean:*)"
+      "Bash(./mvnw.cmd clean:*)",
+      "Bash(npx tsc *)"
     ]
   }
 }

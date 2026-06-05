@@ -2,6 +2,7 @@ package com.fmt.fmt_backend.controller;
 
 import com.fmt.fmt_backend.service.ConversationService;
 import com.fmt.fmt_backend.service.LeadGenService;
+import com.fmt.fmt_backend.service.WhatsAppApiService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
@@ -32,6 +33,7 @@ public class WhatsappWebhookController {
 
     private final ConversationService conversationService;
     private final LeadGenService leadGenService;
+    private final WhatsAppApiService whatsAppApiService;
     private final ObjectMapper objectMapper;
 
     // -------------------------------------------------------------------------
@@ -186,6 +188,18 @@ public class WhatsappWebhookController {
                             ? errors.get(0).path("title").asText(null) : null;
                     content = reason != null ? "[Unsupported: " + reason + "]" : "[Unsupported message]";
                     log.info("Unsupported message from={} payload={}", from, message);
+
+                    // Auto-reply to the user. Meta marks polls, status replies, view-once media,
+                    // channel forwards etc. as "unsupported" — we can't see the content, so we
+                    // tell the user and prompt them to send something we CAN read. Sent before
+                    // the normal flow so the user sees this BEFORE any chatbot welcome template.
+                    try {
+                        whatsAppApiService.sendTextMessage(from,
+                                "Hi 👋 I couldn't read your last message — could you resend it as text, " +
+                                "or tap one of the buttons below?");
+                    } catch (Exception e) {
+                        log.warn("Failed to send unsupported-message auto-reply to {}: {}", from, e.getMessage());
+                    }
                 }
                 default -> {
                     content = "[" + type + " message]";

@@ -20,4 +20,7 @@ public class WhatsappTemplateDto {
     private String headerType;
     /** Media handle from template example — reusable as headerImageId when sending IMAGE header templates */
     private String headerImageHandle;
+    /** Button labels in order, extracted from Meta's BUTTONS component.
+     *  Used by /admin/whatsapp-templates UI to populate the button-payload dropdown. */
+    private List<String> buttonTexts;
 }
