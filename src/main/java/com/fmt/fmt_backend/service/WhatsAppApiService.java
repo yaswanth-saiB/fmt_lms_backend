@@ -231,30 +231,40 @@ public class WhatsAppApiService {
             ResponseEntity<Map> resp = restTemplate.exchange(url, HttpMethod.GET, new HttpEntity<>(headers), Map.class);
             List<Map<String, Object>> data = (List<Map<String, Object>>) resp.getBody().get("data");
             if (data == null) return Collections.emptyList();
+            // Process each template defensively — a parse error on ONE template should not
+            // wipe the whole list (current behavior with a top-level catch was making this
+            // an all-or-nothing operation). Per-template try/catch keeps the good ones.
             return data.stream()
                     .filter(t -> "APPROVED".equals(t.get("status")))
                     .map(t -> {
-                        String bodyText = extractBodyText(t);
-                        List<String> pNames = extractParamNames(bodyText);
-                        String headerType = extractHeaderType(t);
-                        String headerHandle = extractHeaderImageHandle(t);
-                        List<String> buttonTexts = extractButtonTexts(t);
-                        return WhatsappTemplateDto.builder()
-                                .name((String) t.get("name"))
-                                .status((String) t.get("status"))
-                                .category((String) t.get("category"))
-                                .language((String) t.get("language"))
-                                .bodyText(bodyText)
-                                .paramCount(pNames.size())
-                                .paramNames(pNames)
-                                .headerType(headerType)
-                                .headerImageHandle(headerHandle)
-                                .buttonTexts(buttonTexts)
-                                .build();
+                        try {
+                            String bodyText = extractBodyText(t);
+                            List<String> pNames = extractParamNames(bodyText);
+                            String headerType = extractHeaderType(t);
+                            String headerHandle = extractHeaderImageHandle(t);
+                            List<String> buttonTexts = extractButtonTexts(t);
+                            return WhatsappTemplateDto.builder()
+                                    .name((String) t.get("name"))
+                                    .status((String) t.get("status"))
+                                    .category((String) t.get("category"))
+                                    .language((String) t.get("language"))
+                                    .bodyText(bodyText)
+                                    .paramCount(pNames.size())
+                                    .paramNames(pNames)
+                                    .headerType(headerType)
+                                    .headerImageHandle(headerHandle)
+                                    .buttonTexts(buttonTexts)
+                                    .build();
+                        } catch (Exception e) {
+                            log.warn("Failed to parse template '{}': {} — skipping",
+                                    t.get("name"), e.getMessage());
+                            return null;
+                        }
                     })
+                    .filter(java.util.Objects::nonNull)
                     .collect(Collectors.toList());
         } catch (Exception e) {
-            log.error("Failed to fetch WhatsApp templates: {}", e.getMessage());
+            log.error("Failed to fetch WhatsApp templates: {}", e.getMessage(), e);
             return Collections.emptyList();
         }
     }

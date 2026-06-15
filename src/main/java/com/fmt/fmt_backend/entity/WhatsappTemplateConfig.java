@@ -69,7 +69,8 @@ public class WhatsappTemplateConfig extends BaseEntity {
      *   ]
      * Null/empty means the chatbot falls back to legacy hardcoded handling.
      */
-    @Lob
+    // Plain TEXT column — no @Lob (forces PostgreSQL OID-style stream reads which
+    // fail outside an open transaction with "Unable to access lob stream").
     @Column(name = "buttons_json", columnDefinition = "TEXT")
     private String buttonsJson;
 

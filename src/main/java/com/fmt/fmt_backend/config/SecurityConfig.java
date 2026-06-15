@@ -145,7 +145,7 @@ public class SecurityConfig {
                 "https://www.dev.firstmilliontrade.com",   // Dev frontend (www)
                 "https://dev-api.firstmilliontrade.com"    // Backend self-reference (dev)
         ));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList(
                 "Authorization", "Content-Type", "X-Requested-With",
                 "Accept", "Origin", "Access-Control-Request-Method",

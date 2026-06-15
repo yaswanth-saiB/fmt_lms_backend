@@ -246,7 +246,7 @@ whatsapp:
     img-hit: ${WHATSAPP_IMG_HIT:1196867872476788}
     img-forex: ${WHATSAPP_IMG_FOREX:799899596475066}
     img-options: ${WHATSAPP_IMG_OPTIONS:1516526830144751}
-    img-june-batch: ${WHATSAPP_IMG_JUNE_BATCH:2140987660081586}
+    img-june-batch: ${WHATSAPP_IMG_JUNE_BATCH:s}
 
 meta:
   app-secret: ${META_APP_SECRET:}
