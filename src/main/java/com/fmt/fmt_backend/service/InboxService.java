@@ -65,11 +65,21 @@ public class InboxService {
                 .findByConversationOrderBySentAtAsc(conv)
                 .stream().map(this::toMessageResponse).collect(Collectors.toList());
 
-        List<NoteResponse> notes = noteRepository
+        List<NoteResponse> inboxNotes = noteRepository
                 .findByConversationOrderByCreatedAtDesc(conv)
                 .stream().map(this::toNoteResponse).collect(Collectors.toList());
 
         Lead lead = conv.getLead();
+        List<NoteResponse> leadPageNotes = lead != null
+                ? leadActivityRepository.findLeadPageNotesForLead(lead.getId())
+                        .stream().map(this::toNoteResponseFromActivity).collect(Collectors.toList())
+                : java.util.Collections.emptyList();
+
+        List<NoteResponse> notes = new java.util.ArrayList<>();
+        notes.addAll(inboxNotes);
+        notes.addAll(leadPageNotes);
+        notes.sort(java.util.Comparator.comparing(NoteResponse::getCreatedAt).reversed());
+
         return ConversationDetailResponse.builder()
                 .id(conv.getId())
                 .status(conv.getStatus())
@@ -238,12 +248,21 @@ public class InboxService {
     // ── Unread count ───────────────────────────────────────────────────────────
 
     public UnreadCountResponse getUnreadCount(UUID userId, UserRole role) {
-        long total = role == UserRole.ADMIN
-                ? conversationRepository.countWithUnread()
-                : (conversationRepository.sumUnreadForUser(userId) != null
-                        ? conversationRepository.sumUnreadForUser(userId) : 0L);
+        long total = conversationRepository.countConversationsWithUnread();
         long needsHuman = conversationRepository.countNeedsHuman();
         return UnreadCountResponse.builder().total(total).needsHuman(needsHuman).build();
+    }
+
+    @Transactional
+    public void updateLeadName(UUID conversationId, String name) {
+        if (name == null || name.isBlank()) throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.BAD_REQUEST, "Name cannot be blank");
+        WhatsappConversation conv = findConversation(conversationId);
+        Lead lead = conv.getLead();
+        if (lead == null) throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.BAD_REQUEST, "No lead linked to this conversation");
+        lead.setName(name.trim());
+        leadRepository.save(lead);
     }
 
     // ── Notes ──────────────────────────────────────────────────────────────────
@@ -252,12 +271,22 @@ public class InboxService {
     public NoteResponse addNote(UUID conversationId, String content, UUID userId) {
         WhatsappConversation conv = findConversation(conversationId);
         User createdBy = userRepository.findById(userId).orElse(null);
+        Lead lead = conv.getLead();
         ConversationNote note = ConversationNote.builder()
                 .conversation(conv)
+                .lead(lead)
                 .content(content)
                 .createdBy(createdBy)
                 .build();
         note = noteRepository.save(note);
+        if (lead != null) {
+            leadActivityRepository.save(LeadActivity.builder()
+                    .lead(lead)
+                    .activityType(ActivityType.NOTE_ADDED)
+                    .description("[WA Inbox] " + content)
+                    .createdBy(createdBy)
+                    .build());
+        }
         return toNoteResponse(note);
     }
 
@@ -358,6 +387,23 @@ public class InboxService {
                 .content(n.getContent())
                 .createdByName(name)
                 .createdAt(n.getCreatedAt())
+                .source("WA_INBOX")
+                .deletable(true)
+                .build();
+    }
+
+    private NoteResponse toNoteResponseFromActivity(LeadActivity a) {
+        String name = a.getCreatedBy() != null
+                ? a.getCreatedBy().getFirstName() + " " + a.getCreatedBy().getLastName() : "Unknown";
+        String content = a.getDescription() != null
+                ? a.getDescription().replaceFirst("^Note: ", "") : "";
+        return NoteResponse.builder()
+                .id(a.getId())
+                .content(content)
+                .createdByName(name)
+                .createdAt(a.getCreatedAt())
+                .source("LEAD_PAGE")
+                .deletable(false)
                 .build();
     }
 

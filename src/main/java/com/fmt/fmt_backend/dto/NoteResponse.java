@@ -13,4 +13,6 @@ public class NoteResponse {
     private String content;
     private String createdByName;
     private LocalDateTime createdAt;
+    private String source;   // WA_INBOX | LEAD_PAGE
+    private boolean deletable;
 }

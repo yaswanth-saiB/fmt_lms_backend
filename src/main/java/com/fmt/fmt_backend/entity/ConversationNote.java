@@ -24,6 +24,11 @@ public class ConversationNote {
     @JoinColumn(name = "conversation_id", nullable = false)
     private WhatsappConversation conversation;
 
+    @ToString.Exclude
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "lead_id")
+    private Lead lead;
+
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 

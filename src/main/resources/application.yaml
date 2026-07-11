@@ -146,7 +146,7 @@ resend:
 # ============================================
 jwt:
   secret: ${JWT_SECRET:dGVzdC1zZWNyZXQta2V5LWZvci1sb2NhbC1kZXYtb25seS0xMjM=}
-  access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:21600000}
+  access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:7200000}
   refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:1209600000}
 
 # ============================================
@@ -246,7 +246,7 @@ whatsapp:
     img-hit: ${WHATSAPP_IMG_HIT:1196867872476788}
     img-forex: ${WHATSAPP_IMG_FOREX:799899596475066}
     img-options: ${WHATSAPP_IMG_OPTIONS:1516526830144751}
-    img-june-batch: ${WHATSAPP_IMG_JUNE_BATCH:s}
+    img-june-batch: ${WHATSAPP_IMG_JUNE_BATCH:}
 
 meta:
   app-secret: ${META_APP_SECRET:}

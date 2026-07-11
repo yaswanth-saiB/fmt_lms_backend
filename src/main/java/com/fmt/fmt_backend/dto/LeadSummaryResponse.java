@@ -25,6 +25,7 @@ public class LeadSummaryResponse {
     private String phone;
     private String alternatePhone;
     private String email;
+    private String courseInterest;
     private LeadSource source;
     private LeadStatus status;
     private Integer dnpCount;
@@ -72,6 +73,7 @@ public class LeadSummaryResponse {
                 .phone(lead.getPhone())
                 .alternatePhone(lead.getAlternatePhone())
                 .email(lead.getEmail())
+                .courseInterest(lead.getCourseInterest())
                 .source(lead.getSource())
                 .status(lead.getStatus())
                 .dnpCount(lead.getDnpCount())

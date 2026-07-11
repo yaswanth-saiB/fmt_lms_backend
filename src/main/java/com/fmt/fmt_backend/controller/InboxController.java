@@ -117,6 +117,14 @@ public class InboxController {
                 inboxService.getUnreadCount(userId, role)));
     }
 
+    @PatchMapping("/conversations/{id}/lead-name")
+    public ResponseEntity<ApiResponse<Void>> updateLeadName(
+            @PathVariable UUID id,
+            @RequestBody Map<String, String> body) {
+        inboxService.updateLeadName(id, body.get("name"));
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
     // ── Notes ──────────────────────────────────────────────────────────────────
 
     @PostMapping("/conversations/{id}/notes")

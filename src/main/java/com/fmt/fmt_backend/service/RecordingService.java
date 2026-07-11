@@ -531,10 +531,9 @@ public class RecordingService {
     // =========================================================================
 
     /**
-     * Runs every night at midnight.
-     * Deletes expired recordings from Bunny and marks them EXPIRED in the DB.
+     * Previously ran nightly — now disabled. Admin manually deletes recordings as needed.
+     * Kept for reference; can be re-enabled by adding @Scheduled(cron = "0 0 0 * * ?").
      */
-    @Scheduled(cron = "0 0 0 * * ?")
     @Transactional
     public void expireOldRecordings() {
         List<Recording> expired = recordingRepository.findByStatusAndExpiresAtBefore(
@@ -793,8 +792,7 @@ public class RecordingService {
                     org.springframework.http.HttpStatus.BAD_REQUEST,
                     "Recording is not yet available (still processing)");
         }
-        if (recording.getStatus() == RecordingStatus.EXPIRED ||
-                (recording.getExpiresAt() != null && recording.getExpiresAt().isBefore(LocalDateTime.now()))) {
+        if (recording.getStatus() == RecordingStatus.EXPIRED) {
             throw new ResponseStatusException(
                     org.springframework.http.HttpStatus.GONE, "Recording has expired");
         }
@@ -832,8 +830,7 @@ public class RecordingService {
                     org.springframework.http.HttpStatus.BAD_REQUEST,
                     "Recording is not yet available (status: " + recording.getStatus() + ")");
         }
-        if (recording.getStatus() == RecordingStatus.EXPIRED ||
-                (recording.getExpiresAt() != null && recording.getExpiresAt().isBefore(LocalDateTime.now()))) {
+        if (recording.getStatus() == RecordingStatus.EXPIRED) {
             throw new ResponseStatusException(
                     org.springframework.http.HttpStatus.GONE, "Recording has expired");
         }
@@ -873,7 +870,6 @@ public class RecordingService {
 
         return recordingRepository.findByBatchAndStatusOrderByCreatedAtDesc(batch, RecordingStatus.AVAILABLE)
                 .stream()
-                .filter(r -> r.getExpiresAt() == null || r.getExpiresAt().isAfter(LocalDateTime.now()))
                 .map(r -> StudentRecordingResponse.builder()
                         .id(r.getId())
                         .title(r.getTitle())
@@ -916,10 +912,6 @@ public class RecordingService {
                     "Recording is not yet available (still processing)");
         }
         if (recording.getStatus() == RecordingStatus.EXPIRED) {
-            throw new ResponseStatusException(
-                    org.springframework.http.HttpStatus.FORBIDDEN, "Recording has expired");
-        }
-        if (recording.getExpiresAt() != null && recording.getExpiresAt().isBefore(LocalDateTime.now())) {
             throw new ResponseStatusException(
                     org.springframework.http.HttpStatus.FORBIDDEN, "Recording has expired");
         }
@@ -1038,19 +1030,14 @@ public class RecordingService {
         recordingRepository.delete(recording);
         log.info("Recording {} deleted from DB", recordingId);
 
-        // Best-effort Bunny delete — don't fail the whole operation if Bunny API is unavailable
+        // Only delete from Bunny if no other recording rows share this video —
+        // multi-batch classes share one bunnyVideoId; deleting early would break sibling batches
         if (bunnyVideoId != null && !bunnyVideoId.isBlank()) {
-            try {
-                String url = BUNNY_API_BASE + bunnyLibraryId + "/videos/" + bunnyVideoId;
-                org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
-                headers.set("AccessKey", bunnyApiKey);
-                org.springframework.http.HttpEntity<Void> entity =
-                        new org.springframework.http.HttpEntity<>(headers);
-                restTemplate.exchange(url, org.springframework.http.HttpMethod.DELETE, entity, String.class);
-                log.info("Recording {} deleted from Bunny (videoId: {})", recordingId, bunnyVideoId);
-            } catch (Exception e) {
-                log.warn("Could not delete recording {} from Bunny — manual cleanup may be needed. Error: {}",
-                        bunnyVideoId, e.getMessage());
+            long siblings = recordingRepository.countByBunnyVideoIdAndIdNot(bunnyVideoId, recordingId);
+            if (siblings > 0) {
+                log.info("Skipping Bunny delete for videoId={} — {} other recording row(s) still reference it", bunnyVideoId, siblings);
+            } else {
+                deleteBunnyVideo(bunnyVideoId);
             }
         }
     }

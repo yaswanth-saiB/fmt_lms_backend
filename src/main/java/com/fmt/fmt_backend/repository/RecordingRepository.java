@@ -40,9 +40,8 @@ public interface RecordingRepository extends JpaRepository<Recording, UUID> {
 
     @Query("SELECT r FROM Recording r WHERE r.batch.id IN " +
            "(SELECT e.batch.id FROM BatchEnrollment e WHERE e.student.id = :studentId AND e.isActive = true) " +
-           "AND r.status = 'AVAILABLE' AND r.expiresAt > :now ORDER BY r.createdAt DESC")
-    List<Recording> findAvailableRecordingsForStudent(@Param("studentId") UUID studentId,
-                                                      @Param("now") LocalDateTime now);
+           "AND r.status = 'AVAILABLE' ORDER BY r.createdAt DESC")
+    List<Recording> findAvailableRecordingsForStudent(@Param("studentId") UUID studentId);
 
     // Mentor sees their own classes' recordings (via meeting → mentor)
     @Query("SELECT r FROM Recording r WHERE r.meeting.mentor.id = :mentorId ORDER BY r.createdAt DESC")
@@ -50,6 +49,9 @@ public interface RecordingRepository extends JpaRepository<Recording, UUID> {
 
     // Nightly expiry job — find all AVAILABLE recordings past their expiry date
     List<Recording> findByStatusAndExpiresAtBefore(RecordingStatus status, LocalDateTime now);
+
+    // Safety check before Bunny delete — multiple batch rows can share the same bunnyVideoId
+    long countByBunnyVideoIdAndIdNot(String bunnyVideoId, UUID excludeId);
 
     long countByBatch(Batch batch);
 }

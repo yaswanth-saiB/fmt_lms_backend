@@ -8,7 +8,6 @@ import com.fmt.fmt_backend.enums.*;
 import com.fmt.fmt_backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,18 +29,6 @@ public class ChatbotEngine {
     private final ObjectMapper objectMapper;
     private final WhatsappTemplateConfigService templateConfigService;
     private final ButtonActionExecutor buttonActionExecutor;
-
-    @Value("${whatsapp.media.img-welcome}")
-    private String IMG_WELCOME;
-
-    @Value("${whatsapp.media.img-hit}")
-    private String IMG_HIT;
-
-    @Value("${whatsapp.media.img-forex}")
-    private String IMG_FOREX;
-
-    @Value("${whatsapp.media.img-options}")
-    private String IMG_OPTIONS;
 
     @Transactional
     public void processMessage(WhatsappConversation conversation, String content,
@@ -97,8 +84,12 @@ public class ChatbotEngine {
         }
         // Default: send welcome template (organic inbound, no recognized button)
         String name = leadName(conversation);
-        sendTemplate(conversation, "fmt_click_wa_welcome", List.of(name), List.of("customer_name"), IMG_WELCOME);
+        boolean sent = sendTemplate(conversation, "fmt_click_wa_welcome", List.of(name), List.of("customer_name"), null);
         transition(conversation, ChatbotState.MENU_SHOWN);
+        // If template fails (token issue / Meta 403), fall back to interactive menu so lead can still navigate
+        if (!sent) {
+            sendMenu(conversation);
+        }
     }
 
     // Triggers that handleMenuShown knows how to handle — used by handleInitial
@@ -116,9 +107,14 @@ public class ChatbotEngine {
                 transition(conversation, ChatbotState.COURSE_SELECTION);
             }
             case "MENU_DEMO" -> {
-                // Template already has "Demo Today", "Demo Tomorrow", "Pick Another Day" buttons
-                sendTemplate(conversation, "fmt_demo_booking_confirm", List.of(leadName(conversation)), List.of("customer_name"), IMG_WELCOME);
+                // Template has "Demo Today", "Demo Tomorrow", "Pick Another Day" buttons.
+                // If the template fails (e.g. Meta 403), fall back to interactive date buttons.
+                boolean sent = sendTemplate(conversation, "fmt_demo_booking_confirm",
+                        List.of(leadName(conversation)), List.of("customer_name"), null);
                 transition(conversation, ChatbotState.DEMO_DATE_ASKED);
+                if (!sent) {
+                    sendDateButtons(conversation);
+                }
             }
             case "MENU_FEE" -> {
                 sendText(conversation,
@@ -138,18 +134,46 @@ public class ChatbotEngine {
         String input = (buttonId != null ? buttonId : content != null ? content : "").trim().toUpperCase();
 
         if (input.matches("COURSE_HIT|1|HIT|HIT PROGRAM|HIT TRADING|HYBRID|HYBRID INVESTING|HYBRID TRADING")) {
-            // Template has its own CTA buttons (Book Free Demo, Know Fee Details, Call Now) — no extra menu
-            sendTemplate(conversation, "fmt_hit_program_details", List.of(), IMG_HIT);
+            boolean sent = sendTemplate(conversation, "fmt_hit_program_details", List.of());
             transition(conversation, ChatbotState.MENU_SHOWN);
+            if (!sent) {
+                sendText(conversation,
+                        "📊 *HIT Program — Hybrid Investing & Trading*\n\n" +
+                        "✅ Stocks, mutual funds & technical analysis\n" +
+                        "✅ Intraday + swing + long-term strategies\n" +
+                        "✅ Live + recorded sessions with mentor\n" +
+                        "✅ Ideal for beginners and working professionals\n\n" +
+                        "📞 Call us to know fees & batches: *+91 90320 46008*");
+                sendMenu(conversation);
+            }
 
         } else if (input.matches("COURSE_OPTIONS|2|OPTIONS|OPTIONS TRADING|FUTURE|FUTURES|F&O|FNO|FUTURE AND OPTIONS|FUTURE & OPTIONS")) {
-            sendTemplate(conversation, "fmt_options_program_details", List.of(), IMG_OPTIONS);
+            boolean sent = sendTemplate(conversation, "fmt_options_program_details", List.of());
             transition(conversation, ChatbotState.MENU_SHOWN);
+            if (!sent) {
+                sendText(conversation,
+                        "📊 *F&O — Future & Options Trading*\n\n" +
+                        "✅ Option buying + option selling strategies\n" +
+                        "✅ Greeks, risk management & hedging\n" +
+                        "✅ Live market analysis with mentor\n" +
+                        "✅ Best for traders seeking high returns\n\n" +
+                        "📞 Call us to know fees & batches: *+91 90320 46008*");
+                sendMenu(conversation);
+            }
 
         } else if (input.matches("COURSE_FOREX|3|FOREX|FOREX TRADING|GLOBAL|FOREX & GLOBAL|FOREX AND GLOBAL")) {
-            // Template has its own CTA buttons — no extra menu
-            sendTemplate(conversation, "fmt_forex_program_details", List.of(), IMG_FOREX);
+            boolean sent = sendTemplate(conversation, "fmt_forex_program_details", List.of());
             transition(conversation, ChatbotState.MENU_SHOWN);
+            if (!sent) {
+                sendText(conversation,
+                        "📊 *Forex & Global Trading Program*\n\n" +
+                        "✅ Forex, commodities & global indices\n" +
+                        "✅ Currency pairs & macro analysis\n" +
+                        "✅ Live trading sessions with mentor\n" +
+                        "✅ Best for those interested in global markets\n\n" +
+                        "📞 Call us to know fees & batches: *+91 90320 46008*");
+                sendMenu(conversation);
+            }
 
         } else {
             handleUnknown(conversation, content);
@@ -158,6 +182,15 @@ public class ChatbotEngine {
 
     private void handleDemoDateAsked(WhatsappConversation conversation, String content, String buttonId) {
         String input = (buttonId != null ? buttonId : content != null ? content : "").toUpperCase();
+
+        // Cross-state: user clicked a main menu button while bot was waiting for demo date.
+        // Route them through normal menu handling instead of showing "sorry I didn't get that".
+        String menuTrigger = normalizeMenuTrigger(input.trim());
+        if (KNOWN_MENU_TRIGGERS.contains(menuTrigger)) {
+            transition(conversation, ChatbotState.MENU_SHOWN);
+            handleMenuShown(conversation, content, buttonId);
+            return;
+        }
 
         if (input.equals("DEMO_TODAY") || input.contains("TODAY")) {
             setSavedData(conversation, "demoDate", "Today");
@@ -477,15 +510,11 @@ public class ChatbotEngine {
         conversation.setLastMessageAt(LocalDateTime.now());
     }
 
-    private void sendTemplate(WhatsappConversation conversation, String templateName, List<String> params) {
-        sendTemplate(conversation, templateName, params, null, null);
+    private boolean sendTemplate(WhatsappConversation conversation, String templateName, List<String> params) {
+        return sendTemplate(conversation, templateName, params, null, null);
     }
 
-    private void sendTemplate(WhatsappConversation conversation, String templateName, List<String> params, String headerImageId) {
-        sendTemplate(conversation, templateName, params, null, headerImageId);
-    }
-
-    private void sendTemplate(WhatsappConversation conversation, String templateName,
+    private boolean sendTemplate(WhatsappConversation conversation, String templateName,
                                List<String> params, List<String> paramNames, String headerImageId) {
         String waId = null;
         try {
@@ -497,6 +526,7 @@ public class ChatbotEngine {
         saveOutbound(conversation, waId, displayText, WaMessageType.TEXT);
         conversation.setLastMessage("🤖 " + displayText);
         conversation.setLastMessageAt(LocalDateTime.now());
+        return waId != null;
     }
 
     private void escalate(WhatsappConversation conversation) {

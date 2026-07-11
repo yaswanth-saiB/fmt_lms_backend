@@ -14,6 +14,9 @@ public interface LeadActivityRepository extends JpaRepository<LeadActivity, UUID
 
     List<LeadActivity> findByLeadIdOrderByCreatedAtAsc(UUID leadId);
 
+    @Query("SELECT a FROM LeadActivity a WHERE a.lead.id = :leadId AND a.activityType = 'NOTE_ADDED' AND a.description NOT LIKE '[WA Inbox]%' ORDER BY a.createdAt DESC")
+    List<LeadActivity> findLeadPageNotesForLead(@Param("leadId") UUID leadId);
+
     void deleteByLeadId(UUID leadId);
 
     @Query("SELECT COUNT(la) FROM LeadActivity la " +

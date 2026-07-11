@@ -177,6 +177,20 @@ public class LeadService {
     }
 
     // ─────────────────────────────────────────────
+    // Update lead name
+    // ─────────────────────────────────────────────
+
+    @Transactional
+    public ApiResponse<LeadResponse> updateLeadName(UUID id, String name) {
+        Optional<Lead> opt = leadRepository.findById(id);
+        if (opt.isEmpty()) return ApiResponse.error("Lead not found");
+        Lead lead = opt.get();
+        lead.setName(name);
+        leadRepository.save(lead);
+        return ApiResponse.success("Name updated", buildFullResponse(lead));
+    }
+
+    // ─────────────────────────────────────────────
     // Log failed call attempt (DNP)
     // ─────────────────────────────────────────────
 

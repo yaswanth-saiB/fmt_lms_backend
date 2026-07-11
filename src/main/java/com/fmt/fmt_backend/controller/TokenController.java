@@ -4,11 +4,9 @@ import com.fmt.fmt_backend.dto.ApiResponse;
 import com.fmt.fmt_backend.entity.User;
 import com.fmt.fmt_backend.repository.UserRepository;
 import com.fmt.fmt_backend.service.CookieService;
-import com.fmt.fmt_backend.service.DeviceService;
 import com.fmt.fmt_backend.service.JwtService;
 import com.fmt.fmt_backend.service.TokenService;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,7 +29,6 @@ public class TokenController {
 
     private final TokenService tokenService;
     private final JwtService jwtService;
-    private final DeviceService deviceService;
     private final CookieService cookieService;
     private final UserRepository userRepository;
     private final HttpServletRequest request;
@@ -42,86 +39,19 @@ public class TokenController {
     // =====================================================================
 
     @PostMapping("/refresh")
-    @Operation(
-            summary = "Refresh Access Token",
-            description = "Issues a new access_token cookie using the refresh_token cookie. " +
-                    "The browser sends the cookie automatically (path=/api/auth/token). " +
-                    "For Swagger testing you can also pass the token as a query param."
-    )
+    @Operation(summary = "Refresh Access Token (disabled)", description = "Token refresh is disabled. Sessions expire after 2 hours and require re-login.")
     @SecurityRequirements({})
     public ResponseEntity<ApiResponse<Map<String, Object>>> refreshToken(
-            @Parameter(description = "Refresh token (Swagger fallback — cookie is preferred)")
             @RequestParam(required = false) String refreshToken) {
-
-        log.info("🔄 Token refresh request");
-
-        try {
-            // Cookie first, query param as Swagger fallback
-            String token = cookieService.getRefreshTokenFromCookies(request)
-                    .orElse(refreshToken);
-
-            if (token == null || token.isBlank()) {
-                return ResponseEntity.status(401).body(ApiResponse.error("Refresh token not found"));
-            }
-
-            String deviceFingerprint = deviceService.generateDeviceFingerprint(request);
-            Map<String, Object> tokens = tokenService.refreshAccessToken(token, deviceFingerprint);
-
-            // Update access_token cookie, keep same refresh_token cookie
-            String newAccessToken = (String) tokens.get("accessToken");
-            HttpHeaders headers = cookieService.buildAuthCookieHeaders(newAccessToken, token);
-
-            // Return only non-sensitive info
-            Map<String, Object> body = new HashMap<>();
-            body.put("sessionId", tokens.get("sessionId"));
-            body.put("expiresIn", tokens.get("expiresIn"));
-
-            return ResponseEntity.ok().headers(headers).body(ApiResponse.success("Token refreshed successfully", body));
-
-        } catch (Exception e) {
-            log.error("❌ Token refresh failed: {}", e.getMessage());
-            return ResponseEntity.status(401).body(ApiResponse.error("Token refresh failed: " + e.getMessage()));
-        }
+        return ResponseEntity.status(401).body(ApiResponse.error("Session expired. Please log in again."));
     }
 
     @PostMapping("/rotate")
-    @Operation(
-            summary = "Rotate Refresh Token",
-            description = "Issues a new refresh_token (and access_token). Revokes the old refresh_token. " +
-                    "Use this for extended sessions / sliding-window expiry."
-    )
+    @Operation(summary = "Rotate Refresh Token (disabled)", description = "Token rotation is disabled.")
     @SecurityRequirements({})
     public ResponseEntity<ApiResponse<Map<String, Object>>> rotateToken(
-            @Parameter(description = "Current refresh token (Swagger fallback — cookie is preferred)")
             @RequestParam(required = false) String refreshToken) {
-
-        log.info("🔄 Token rotation request");
-
-        try {
-            String token = cookieService.getRefreshTokenFromCookies(request)
-                    .orElse(refreshToken);
-
-            if (token == null || token.isBlank()) {
-                return ResponseEntity.status(401).body(ApiResponse.error("Refresh token not found"));
-            }
-
-            String deviceFingerprint = deviceService.generateDeviceFingerprint(request);
-            Map<String, Object> tokens = tokenService.rotateRefreshToken(token, deviceFingerprint);
-
-            String newAccessToken = (String) tokens.get("accessToken");
-            String newRefreshToken = (String) tokens.get("refreshToken");
-            HttpHeaders headers = cookieService.buildAuthCookieHeaders(newAccessToken, newRefreshToken);
-
-            Map<String, Object> body = new HashMap<>();
-            body.put("sessionId", tokens.get("sessionId"));
-            body.put("expiresIn", tokens.get("expiresIn"));
-
-            return ResponseEntity.ok().headers(headers).body(ApiResponse.success("Token rotated successfully", body));
-
-        } catch (Exception e) {
-            log.error("❌ Token rotation failed: {}", e.getMessage());
-            return ResponseEntity.status(401).body(ApiResponse.error("Token rotation failed: " + e.getMessage()));
-        }
+        return ResponseEntity.status(401).body(ApiResponse.error("Session expired. Please log in again."));
     }
 
     // =====================================================================

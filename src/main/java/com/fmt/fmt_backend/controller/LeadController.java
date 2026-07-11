@@ -119,6 +119,21 @@ public class LeadController {
     }
 
     // ─────────────────────────────────────────────
+    // Update lead name
+    // ─────────────────────────────────────────────
+
+    @PatchMapping("/leads/{id}/name")
+    @Operation(summary = "Update lead name", description = "Role: ADMIN or SALES")
+    public ResponseEntity<ApiResponse<LeadResponse>> updateLeadName(
+            @PathVariable UUID id,
+            @RequestBody Map<String, String> body) {
+        String name = body.get("name");
+        if (name == null || name.isBlank())
+            return ResponseEntity.badRequest().body(ApiResponse.error("Name cannot be blank"));
+        return ResponseEntity.ok(leadService.updateLeadName(id, name.trim()));
+    }
+
+    // ─────────────────────────────────────────────
     // Log failed call (DNP)
     // ─────────────────────────────────────────────
 
@@ -327,6 +342,25 @@ public class LeadController {
     public ResponseEntity<ApiResponse<List<SalesRepStatsResponse>>> getRepStats() {
         ApiResponse<List<SalesRepStatsResponse>> response = leadService.getRepStats();
         return ResponseEntity.ok(response);
+    }
+
+    // ─────────────────────────────────────────────
+    // Sales reps list (for filter dropdown — ADMIN + SALES)
+    // ─────────────────────────────────────────────
+
+    @GetMapping("/reps")
+    @Operation(summary = "List active sales reps for filter dropdowns", description = "Role: ADMIN or SALES")
+    public ResponseEntity<ApiResponse<List<Map<String, String>>>> getSalesReps() {
+        List<Map<String, String>> reps = userRepository.findAllByUserRoleOrderByCreatedAtDesc(UserRole.SALES)
+                .stream()
+                .filter(u -> Boolean.TRUE.equals(u.getIsActive()))
+                .map(u -> Map.of(
+                        "id", u.getId().toString(),
+                        "firstName", u.getFirstName(),
+                        "lastName", u.getLastName()
+                ))
+                .toList();
+        return ResponseEntity.ok(ApiResponse.success("Sales reps fetched", reps));
     }
 
     // ─────────────────────────────────────────────

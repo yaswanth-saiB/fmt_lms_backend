@@ -47,7 +47,7 @@ public interface WhatsappConversationRepository extends JpaRepository<WhatsappCo
             Pageable pageable);
 
     @Query("SELECT COUNT(c) FROM WhatsappConversation c WHERE c.unreadCount > 0")
-    long countWithUnread();
+    long countConversationsWithUnread();
 
     @Query("SELECT COUNT(c) FROM WhatsappConversation c WHERE c.status = com.fmt.fmt_backend.enums.ConversationStatus.NEEDS_HUMAN")
     long countNeedsHuman();
